@@ -73,7 +73,7 @@ def CheckAddrExists(node,is_learning):
       addresses_lost.add(node)
 
 def CheckEdgeExists(edge,is_learning):
-   print "checking" 
+    
    if not edge in str(gr.edges()) and not edge in edges_lost and is_learning == False:
       print "edge lost:", edge
       edges_lost.add(edge)
@@ -82,11 +82,15 @@ def DataProcess(stats_interval):
    while True:
       lock.acquire()
       RemoveOldData()
-      for addr in addresses_used:
-         CheckAddrExists(addr,is_learning)
-         CheckAddrExists(addr,is_learning)
-      for edge in edges_used:
-         CheckEdgeExists(str(edge),is_learning)
+      addresses_removed = addresses_used.difference(set(gr.nodes()))
+      edges_removed = edges_used.difference(set(gr.edges()))
+      #print addresses_removed
+      print edges_removed
+      #for addr in addresses_used:
+      #   CheckAddrExists(addr,is_learning)
+      #   CheckAddrExists(addr,is_learning)
+      #for edge in edges_used:
+      #   CheckEdgeExists(str(edge),is_learning)
       lock.release()   
       time.sleep(stats_interval)
 
@@ -95,16 +99,17 @@ def DataProcess(stats_interval):
 def IsIpUsed(ip,is_learning):
    if not ip in addresses_used:
       addresses_used.add(ip)
-      if is_learning == False:
-         print "New ip found", ip   
+      #if is_learning == False:
+      #   print "New ip found", ip   
 
 def IsEdgeUsed (edge, is_learning):
    if not edge in edges_used:
       edges_used.add(edge)
-      if is_learning == False:
-         print "New edge found", edge   
+      #if is_learning == False:
+      #   print "New edge found", edge   
 
-#def IsMailServer():
+#def IsMailSender():
+#   if str(rec.SRC_IP)
 
    
 
@@ -112,21 +117,26 @@ def IsEdgeUsed (edge, is_learning):
 def StatsProcess(is_learning):
    IsIpUsed(str(rec.SRC_IP),is_learning)
    IsIpUsed(str(rec.DST_IP),is_learning)
-   print str(rec.SRC_IP), str(rec.DST_IP)
    IsEdgeUsed(((str(rec.SRC_IP),str(rec.DST_IP))),is_learning)
-   #IsMailServer(is_learning)
+   #IsMailSender(is_learning)
 
 
   
 
-def UpdateParameters(rec,properties):
+def UpdateParameters(src_ip,dst_ip,rec,properties):
    for p in properties:
-      if p in gr.edge[str(rec.SRC_IP)][str(rec.DST_IP)]:
-         if not str(getattr(rec,p)) in gr.edge[str(rec.SRC_IP)][str(rec.DST_IP)][p].split(","):
-            gr.edge[str(rec.SRC_IP)][str(rec.DST_IP)][p] += "," + str(getattr(rec,p))
+      p_cut = p.replace("_", "")
+      str(getattr(rec,p))
+      if p_cut in gr.edge[src_ip][dst_ip]:
+         if not str(getattr(rec,p)) in gr.edge[src_ip][dst_ip][p_cut]:
+            gr.edge[src_ip][dst_ip][p_cut][str(getattr(rec,p))] = 1
+         else:
+            gr.edge[src_ip][dst_ip][p_cut][str(getattr(rec,p))] = gr.edge[src_ip][dst_ip][p_cut][str(getattr(rec,p))] + 1
          
       else:
-         gr.edge[str(rec.SRC_IP)][str(rec.DST_IP)][p] = str(getattr(rec,p))
+         gr.edge[src_ip][dst_ip][p_cut] = {}
+         gr.edge[src_ip][dst_ip][p_cut][str(getattr(rec,p))] = 1
+      #print gr.edge[src_ip][dst_ip][p_cut]
    return gr
 
 def CheckIPRange(ip,ip_range):
@@ -143,19 +153,19 @@ def AddRecord(rec, gr, properties,ip_range):
    src_ip = CheckIPRange(str(rec.SRC_IP),ip_range)
    dst_ip = CheckIPRange(str(rec.DST_IP),ip_range)
    
-    
+   print src_ip,dst_ip 
    if src_ip != dst_ip:
       if gr.has_edge(src_ip,dst_ip):
          gr[src_ip][dst_ip]['weight'] += 1
          gr[src_ip][dst_ip]['time'] = rec.TIME_LAST.getSec()
          if properties is not None:
-            gr = UpdateParameters(rec,properties)
+            gr = UpdateParameters(src_ip,dst_ip,rec,properties)
          
       else:
          gr.add_edge(src_ip,dst_ip, weight = 1, time = rec.TIME_LAST.getSec())
          if properties is not None:
-            gr = UpdateParameters(rec,properties)
-
+            gr = UpdateParameters(src_ip,dst_ip,rec,properties)
+   print gr.edge[src_ip][dst_ip]['SRCPORT']
    return gr
       
 
@@ -181,7 +191,6 @@ def ParseAdditionalParams(parser,ip_range, prop_array):
    
    if ip_range is not None:
       ip_range = ip_range.split('-')
-      print ip_range[0], ip_range[1]
       ip_range = list(ipaddress.summarize_address_range(ipaddress.ip_address(unicode(ip_range[0], "utf-8")), ipaddress.ip_address(unicode(ip_range[1], "utf-8"))))
    
 
@@ -202,7 +211,7 @@ def ExportData(time_delta = 60, directory = "data"):
    print "exporting data"
    if not os.path.exists(directory):
       os.makedirs(directory)       
-   nx.write_graphml(gr, str(directory)+"/"+str(time.time()), encoding='utf-8', prettyprint=True)
+   nx.write_gml(gr, str(directory)+"/"+str(time.time()))
       
 
 
