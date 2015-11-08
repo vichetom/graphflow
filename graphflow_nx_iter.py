@@ -3,6 +3,7 @@
 import pdb
 import sys
 import os.path
+import traceback
 sys.path.append(os.path.join(os.path.dirname(__file__), "..", "..", "python","/home/tom/nemea/nemea-install/share/nemea-python","/home/tom/nemea/nemea-install/","/home/tom/nemea/nemea-install/lib"))
 import trap
 import unirec
@@ -61,6 +62,8 @@ parser.add_option("-q", "--quiet",
          action="store_false", dest="verbose", default=True,
          help="don't print status messages to stdout")
 
+#------------------------------------------------------
+
 def CheckAddrExists(node,is_learning):
    if not node in str(gr.nodes()) and not node in addresses_lost and is_learning == False:
       print "IP lost:", node
@@ -77,6 +80,8 @@ def DataProcess(stats_interval):
       lock.release()   
       time.sleep(stats_interval)
 
+#--------------------------------------------------------
+
 def CheckIpExists(ip,is_learning):
    if not ip in addresses_used:
       addresses_used.add(ip)
@@ -86,6 +91,8 @@ def CheckIpExists(ip,is_learning):
 def StatsProcess(is_learning):
    CheckIpExists(str(rec.SRC_IP),is_learning)
    CheckIpExists(str(rec.DST_IP),is_learning)
+
+
   
 
 def UpdateParameters(rec,properties):
@@ -157,7 +164,7 @@ def ParseAdditionalParams(parser,ip_range, prop_array):
    return option_dict, prop_array,ip_range, int(option_dict['export_interval']), option_dict['filename'],int(option_dict['time_window']),int(option_dict['time_stats_window'])
    
 
-def TimeWindowProces(time_delta, directory):
+def ExportProces(time_delta, directory):
    while True:
       lock.acquire()
       RemoveOldData()
@@ -201,11 +208,11 @@ UR_Flow = None
 option_dict, prop_array,ip_range, export_interval,filename, time_window, stats_interval = ParseAdditionalParams(parser,ip_range,prop_array)
 try:
    start_new_thread(DataProcess,(stats_interval,))
+   start_new_thread(ExportProces,(export_interval,filename))
 except Exception:
-   import traceback
    print traceback.format_exc()
 
-start_new_thread(TimeWindowProces,(export_interval,filename))
+
 
 # Main loop (trap.stop is set to True when SIGINT or SIGTERM is received)
 while not trap.stop:
@@ -241,14 +248,13 @@ while not trap.stop:
    
    oldest_time = newest_time - time_window
 
-   lock.acquire()
-   gr = AddRecord(rec, gr,prop_array, ip_range)
-   lock.release()
    if incounter > learning_interval:
       is_learning = False
 
+   lock.acquire()
+   gr = AddRecord(rec, gr,prop_array, ip_range)
    StatsProcess(is_learning)
-   
+   lock.release()
 
    incounter+=1  
    
