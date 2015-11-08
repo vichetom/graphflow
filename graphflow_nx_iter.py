@@ -34,6 +34,8 @@ allowed_properties = ["PORT","BYTES", "PACKETS", "DST_PORT", "SRC_PORT", "HTTP_R
 incounter = 0
 addresses_used = set()
 addresses_lost = set()
+edges_used = set()
+edges_lost = set()
 learning_interval = 3
 is_learning = True
 
@@ -70,28 +72,43 @@ def CheckAddrExists(node,is_learning):
       print "IP lost:", node
       addresses_lost.add(node)
 
+def CheckEdgeExists(edge,is_learning):
+   print "checking" 
+   if not edge in str(gr.edges()) and not edge in edges_lost and is_learning == False:
+      print "edge lost:", edge
+      edges_lost.add(edge)
+
 def DataProcess(stats_interval):
    while True:
       lock.acquire()
       RemoveOldData()
       for addr in addresses_used:
-
          CheckAddrExists(addr,is_learning)
          CheckAddrExists(addr,is_learning)
+      for edge in edges_used:
+         CheckEdgeExists(str(edge),is_learning)
       lock.release()   
       time.sleep(stats_interval)
 
 #--------------------------------------------------------
 
-def CheckIpExists(ip,is_learning):
+def CheckIpUsed(ip,is_learning):
    if not ip in addresses_used:
       addresses_used.add(ip)
       if is_learning == False:
          print "New ip found", ip   
 
+def CheckEdgeUsed (edge, is_learning):
+   if not edge in edges_used:
+      edges_used.add(edge)
+      if is_learning == False:
+         print "New edge found", edge   
+
 def StatsProcess(is_learning):
-   CheckIpExists(str(rec.SRC_IP),is_learning)
-   CheckIpExists(str(rec.DST_IP),is_learning)
+   CheckIpUsed(str(rec.SRC_IP),is_learning)
+   CheckIpUsed(str(rec.DST_IP),is_learning)
+   print str(rec.SRC_IP), str(rec.DST_IP)
+   CheckEdgeUsed(((str(rec.SRC_IP),str(rec.DST_IP))),is_learning)
 
 
   
