@@ -64,6 +64,7 @@ parser.add_option("-q", "--quiet",
 
 #------------------------------------------------------
 
+
 def CheckAddrExists(node,is_learning):
    if not node in str(gr.nodes()) and not node in addresses_lost and is_learning == False:
       print "IP lost:", node
