@@ -92,23 +92,29 @@ def DataProcess(stats_interval):
 
 #--------------------------------------------------------
 
-def CheckIpUsed(ip,is_learning):
+def IsIpUsed(ip,is_learning):
    if not ip in addresses_used:
       addresses_used.add(ip)
       if is_learning == False:
          print "New ip found", ip   
 
-def CheckEdgeUsed (edge, is_learning):
+def IsEdgeUsed (edge, is_learning):
    if not edge in edges_used:
       edges_used.add(edge)
       if is_learning == False:
          print "New edge found", edge   
 
+#def IsMailServer():
+
+   
+
+
 def StatsProcess(is_learning):
-   CheckIpUsed(str(rec.SRC_IP),is_learning)
-   CheckIpUsed(str(rec.DST_IP),is_learning)
+   IsIpUsed(str(rec.SRC_IP),is_learning)
+   IsIpUsed(str(rec.DST_IP),is_learning)
    print str(rec.SRC_IP), str(rec.DST_IP)
-   CheckEdgeUsed(((str(rec.SRC_IP),str(rec.DST_IP))),is_learning)
+   IsEdgeUsed(((str(rec.SRC_IP),str(rec.DST_IP))),is_learning)
+   #IsMailServer(is_learning)
 
 
   
