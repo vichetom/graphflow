@@ -32,10 +32,6 @@ option_dict = None
 ip_range = None
 allowed_properties = ["PORT","BYTES", "PACKETS", "DST_PORT", "SRC_PORT", "HTTP_RSP_CODE", "PROTOCOL", "TCP_FLAGS", "TTL", "TIME_FIRST", "TIME_LAST"]
 incounter = 0
-addresses_used = set()
-addresses_lost = set()
-edges_used = set()
-edges_lost = set()
 learning_interval = 3
 is_learning = True
 
@@ -67,61 +63,59 @@ parser.add_option("-q", "--quiet",
 #------------------------------------------------------
 
 
-def CheckAddrExists(node,is_learning):
-   if not node in str(gr.nodes()) and not node in addresses_lost and is_learning == False:
-      print "IP lost:", node
-      addresses_lost.add(node)
-
-def CheckEdgeExists(edge,is_learning):
-    
-   if not edge in str(gr.edges()) and not edge in edges_lost and is_learning == False:
-      print "edge lost:", edge
-      edges_lost.add(edge)
-
 def DataProcess(stats_interval):
+   addresses_used = set()
+   addresses_added = set()
+   edges_used = set()
+   edges_added = set()
+   edges_removed =set()
+   addresses_removed = set()
+   edge_new = set()
+   addresses_new =set()
+   addresses_last = set()
+   edges_last = set()
+   addresses_first_removed = set()
+   edges_first_removed = set()
+   addresses_past_removed =set()
+   edges_past_removed =set()
    while True:
       lock.acquire()
       RemoveOldData()
-      addresses_removed = addresses_used.difference(set(gr.nodes()))
-      edges_removed = edges_used.difference(set(gr.edges()))
+      #print addresses_used
+      #print gr.nodes()
+      addresses_new = set(gr.nodes()).difference(addresses_used)
+      addresses_added = set(gr.nodes()).difference(addresses_last)
+      addresses_used.update(addresses_new)
+      edges_new =  set(gr.edges()).difference(edges_used)
+      edges_added = set(gr.edges()).difference(edges_last)
+      edges_used.update(edges_new)
+      addresses_removed = addresses_last.difference(set(gr.nodes()))
+      addresses_first_removed = addresses_used.difference(addresses_past_removed).difference(set(gr.nodes()))
+      
+      addresses_past_removed.update(addresses_first_removed)
+      edges_removed = edges_last.difference(set(gr.edges()))
+      edges_first_removed = edges_used.difference(edges_past_removed).difference(set(gr.edges()))
+      
+      edges_past_removed.update(edges_first_removed)
+      
+
       #print addresses_removed
-      print edges_removed
+      #print edges_removed
+      print "addresses first added", addresses_new
+      print "edges first added", edges_new
+      print "addr fst removed",addresses_first_removed
+      print "add removed", addresses_removed
       #for addr in addresses_used:
-      #   CheckAddrExists(addr,is_learning)
       #   CheckAddrExists(addr,is_learning)
       #for edge in edges_used:
       #   CheckEdgeExists(str(edge),is_learning)
+      edges_last = set(gr.edges())
+      addresses_last = set(gr.nodes())
       lock.release()   
       time.sleep(stats_interval)
 
 #--------------------------------------------------------
 
-def IsIpUsed(ip,is_learning):
-   if not ip in addresses_used:
-      addresses_used.add(ip)
-      #if is_learning == False:
-      #   print "New ip found", ip   
-
-def IsEdgeUsed (edge, is_learning):
-   if not edge in edges_used:
-      edges_used.add(edge)
-      #if is_learning == False:
-      #   print "New edge found", edge   
-
-#def IsMailSender():
-#   if str(rec.SRC_IP)
-
-   
-
-
-def StatsProcess(is_learning):
-   IsIpUsed(str(rec.SRC_IP),is_learning)
-   IsIpUsed(str(rec.DST_IP),is_learning)
-   IsEdgeUsed(((str(rec.SRC_IP),str(rec.DST_IP))),is_learning)
-   #IsMailSender(is_learning)
-
-
-  
 
 def UpdateParameters(src_ip,dst_ip,rec,properties):
    for p in properties:
@@ -153,7 +147,7 @@ def AddRecord(rec, gr, properties,ip_range):
    src_ip = CheckIPRange(str(rec.SRC_IP),ip_range)
    dst_ip = CheckIPRange(str(rec.DST_IP),ip_range)
    
-   print src_ip,dst_ip 
+   #print src_ip,dst_ip 
    if src_ip != dst_ip:
       if gr.has_edge(src_ip,dst_ip):
          gr[src_ip][dst_ip]['weight'] += 1
@@ -165,7 +159,7 @@ def AddRecord(rec, gr, properties,ip_range):
          gr.add_edge(src_ip,dst_ip, weight = 1, time = rec.TIME_LAST.getSec())
          if properties is not None:
             gr = UpdateParameters(src_ip,dst_ip,rec,properties)
-   print gr.edge[src_ip][dst_ip]['SRCPORT']
+   #print gr.edge[src_ip][dst_ip]['SRCPORT']
    return gr
       
 
@@ -286,7 +280,6 @@ while not trap.stop:
 
    lock.acquire()
    gr = AddRecord(rec, gr,prop_array, ip_range)
-   StatsProcess(is_learning)
    lock.release()
 
    incounter+=1  
