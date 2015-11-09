@@ -101,10 +101,10 @@ def DataProcess(stats_interval):
 
       #print addresses_removed
       #print edges_removed
-      print "addresses first added", addresses_new
-      print "edges first added", edges_new
-      print "addr fst removed",addresses_first_removed
-      print "add removed", addresses_removed
+      #print "addresses first added", addresses_new
+      #print "edges first added", edges_new
+      #print "addr fst removed",addresses_first_removed
+      #print "add removed", addresses_removed
       #for addr in addresses_used:
       #   CheckAddrExists(addr,is_learning)
       #for edge in edges_used:
