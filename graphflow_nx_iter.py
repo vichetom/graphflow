@@ -63,7 +63,7 @@ parser.add_option("-q", "--quiet",
 #------------------------------------------------------
 
 
-def FlowProcess(is_learning):
+def FlowProcess(is_learning,gr):
    gr = AddRecord(rec, gr,prop_array, ip_range)
    
 
@@ -278,11 +278,11 @@ while not trap.stop:
       newest_time = rec.TIME_LAST.getSec()
    
    oldest_time = newest_time - time_window
-
+   print "cas", rec.TIME_LAST.toString("%Y-%m-%d %H:%M:%S")
    if incounter > learning_interval:
       is_learning = False
 
-   FlowProcess()
+   FlowProcess(is_learning,gr)
    
    incounter+=1  
    
