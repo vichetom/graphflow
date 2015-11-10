@@ -91,11 +91,9 @@ def DataProcess(stats_interval):
       edges_used.update(edges_new)
       addresses_removed = addresses_last.difference(set(gr.nodes()))
       addresses_first_removed = addresses_used.difference(addresses_past_removed).difference(set(gr.nodes()))
-      
       addresses_past_removed.update(addresses_first_removed)
       edges_removed = edges_last.difference(set(gr.edges()))
       edges_first_removed = edges_used.difference(edges_past_removed).difference(set(gr.edges()))
-      
       edges_past_removed.update(edges_first_removed)
       
 
