@@ -63,6 +63,12 @@ parser.add_option("-q", "--quiet",
 #------------------------------------------------------
 
 
+def FlowProcess(is_learning):
+   gr = AddRecord(rec, gr,prop_array, ip_range)
+   
+
+
+
 def DataProcess(stats_interval):
    addresses_used = set()
    addresses_added = set()
@@ -276,10 +282,8 @@ while not trap.stop:
    if incounter > learning_interval:
       is_learning = False
 
-   lock.acquire()
-   gr = AddRecord(rec, gr,prop_array, ip_range)
-   lock.release()
-
+   FlowProcess()
+   
    incounter+=1  
    
 
