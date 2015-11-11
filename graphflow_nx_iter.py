@@ -15,6 +15,8 @@ import time
 import pylab as p
 from thread import start_new_thread,allocate_lock
 import  ipaddress
+import json
+from networkx.readwrite import json_graph
 
 lock = allocate_lock() 
 gr=nx.DiGraph()
@@ -32,13 +34,15 @@ option_dict = None
 ip_range = None
 allowed_properties = ["PORT","BYTES", "PACKETS", "DST_PORT", "SRC_PORT", "HTTP_RSP_CODE", "PROTOCOL", "TCP_FLAGS", "TTL", "TIME_FIRST", "TIME_LAST"]
 incounter = 0
-learning_interval = 3
 is_learning = True
 
 
 # How to add options of module
 from optparse import OptionParser
 parser = OptionParser(add_help_option=False)
+parser.add_option("-l", "--learning",
+         dest="learning",default=False,
+         help="Turns learning phase on and off. Choose True/False")
 parser.add_option("-p", "--properties",
          dest="properties",default=None,
          help="Set properties to be saved. Separated by comma. Its possible to choose from: "+str(allowed_properties))
@@ -48,13 +52,10 @@ parser.add_option("-r", "--ip-range",
 parser.add_option("-t", "--time-window",
          dest="time_window",default=60,
          help="Set size of time window for keeping data in seconds. Defalut is 60 sec.")
-parser.add_option("-s", "--time-statistics-window",
-         dest="time_stats_window",default=60,
-         help="Set size of time window for for statistics processing interval. Defalut is 60 sec.")
 parser.add_option("-e", "--export-interval",
          dest="export_interval",default=60,
          help="Set data export interval. Default is 60 sec.")
-parser.add_option("-f", "--file", dest="filename",default=None,
+parser.add_option("-f", "--file", dest="filename",
          help="Set directory to save data. If parameter is not set, data are not saved.", metavar="FILE")
 parser.add_option("-q", "--quiet",
          action="store_false", dest="verbose", default=True,
@@ -63,8 +64,16 @@ parser.add_option("-q", "--quiet",
 #------------------------------------------------------
 
 
-def FlowProcess(is_learning,gr):
-   gr = AddRecord(rec, gr,prop_array, ip_range)
+def FlowProcess(is_learning,rec, gr, prop_array, ip_range,stats_trigger):
+   gr = AddRecord(rec, gr, prop_array, ip_range)
+   if is_learning == False:
+      if rec.TIME_LAST.getSec() > stats_trigger:
+         stats_trigger += time_window
+
+
+
+
+         gr.clear()
    
 
 
@@ -123,7 +132,7 @@ def DataProcess(stats_interval):
 
 def UpdateParameters(src_ip,dst_ip,rec,properties):
    for p in properties:
-      p_cut = p.replace("_", "")
+      p_cut = p
       str(getattr(rec,p))
       if p_cut in gr.edge[src_ip][dst_ip]:
          if not str(getattr(rec,p)) in gr.edge[src_ip][dst_ip][p_cut]:
@@ -146,6 +155,22 @@ def CheckIPRange(ip,ip_range):
    return ip
 
 
+def AddTimeInfo(src_ip, dst_ip, rec,gr):
+   #if not rec.TIME_LAST.toString("%a") in gr[src_ip][dst_ip]['time']:
+   #   gr[src_ip][dst_ip]['time'] = {}
+   #   gr[src_ip][dst_ip]['time'][rec.TIME_LAST.toString("%a")] = {}
+   #   gr[src_ip][dst_ip]['time'][rec.TIME_LAST.toString("%a")][rec.TIME_LAST.toString("%H")] = {}
+   #   gr[src_ip][dst_ip]['time'][rec.TIME_LAST.toString("%a")][rec.TIME_LAST.toString("%H")][rec.TIME_LAST.toString("%M")] = 1
+   #if not rec.TIME_LAST.toString("%a") in gr[src_ip][dst_ip]['time']:
+   if rec.TIME_LAST.toString("%M") in gr[src_ip][dst_ip]['time'][rec.TIME_LAST.toString("%a")][rec.TIME_LAST.toString("%H")]:
+      gr[src_ip][dst_ip]['time'][rec.TIME_LAST.toString("%a")][rec.TIME_LAST.toString("%H")][rec.TIME_LAST.toString("%M")] += 1
+   else:
+      gr[src_ip][dst_ip]['time'][rec.TIME_LAST.toString("%a")][rec.TIME_LAST.toString("%H")][rec.TIME_LAST.toString("%M")] = 1    
+   #print type(rec.TIME_LAST.toString("%M")), type(gr[src_ip][dst_ip]['time'][rec.TIME_LAST.toString("%a")][rec.TIME_LAST.toString("%H")][rec.TIME_LAST.toString("%M")]) 
+   #if gr[src_ip][dst_ip]['time'][rec.TIME_LAST.toString("%a")][rec.TIME_LAST.toString("%H")][rec.TIME_LAST.toString("%M")] > 1:
+   #   print src_ip,dst_ip, gr[src_ip][dst_ip]['time'][rec.TIME_LAST.toString("%a")][rec.TIME_LAST.toString("%H")]
+   return gr
+
 def AddRecord(rec, gr, properties,ip_range):
 
    src_ip = CheckIPRange(str(rec.SRC_IP),ip_range)
@@ -155,15 +180,17 @@ def AddRecord(rec, gr, properties,ip_range):
    if src_ip != dst_ip:
       if gr.has_edge(src_ip,dst_ip):
          gr[src_ip][dst_ip]['weight'] += 1
-         gr[src_ip][dst_ip]['time'] = rec.TIME_LAST.getSec()
+         gr[src_ip][dst_ip]['last_seen'] = rec.TIME_LAST.getSec()
+         gr = AddTimeInfo(src_ip,dst_ip, rec,gr)
+         
          if properties is not None:
             gr = UpdateParameters(src_ip,dst_ip,rec,properties)
          
       else:
-         gr.add_edge(src_ip,dst_ip, weight = 1, time = rec.TIME_LAST.getSec())
+         gr.add_edge(src_ip,dst_ip, weight = 1, last_seen = rec.TIME_LAST.getSec(), time = {rec.TIME_LAST.toString("%a") : {rec.TIME_LAST.toString("%H") : {rec.TIME_LAST.toString("%M") : 1}}})
          if properties is not None:
             gr = UpdateParameters(src_ip,dst_ip,rec,properties)
-   #print gr.edge[src_ip][dst_ip]['SRCPORT']
+   #print gr.edge[src_ip][dst_ip]['time'][rec.TIME_LAST.toString("%a")][rec.TIME_LAST.toString("%H")]
    return gr
       
 
@@ -192,24 +219,16 @@ def ParseAdditionalParams(parser,ip_range, prop_array):
       ip_range = list(ipaddress.summarize_address_range(ipaddress.ip_address(unicode(ip_range[0], "utf-8")), ipaddress.ip_address(unicode(ip_range[1], "utf-8"))))
    
 
-   return option_dict, prop_array,ip_range, int(option_dict['export_interval']), option_dict['filename'],int(option_dict['time_window']),int(option_dict['time_stats_window'])
+   return prop_array,ip_range, option_dict['filename'],int(option_dict['time_window']),bool(option_dict['learning'])
    
 
-def ExportProces(time_delta, directory):
-   while True:
-      lock.acquire()
-      RemoveOldData()
-      if directory is not None: 
-         ExportData(time_delta,directory)
-      lock.release()
-      time.sleep(time_delta)
-
-
-def ExportData(time_delta = 60, directory = "data"):
+def ExportData(directory = "data"):
    print "exporting data"
    if not os.path.exists(directory):
-      os.makedirs(directory)       
-   nx.write_gml(gr, str(directory)+"/"+str(time.time()))
+      os.makedirs(directory)
+   with open(str(directory)+"/learned.json", 'w') as outfile1:
+      outfile1.write(json.dumps(json_graph.node_link_data(gr)))      
+   
       
 
 
@@ -236,12 +255,7 @@ trap.set_required_fmt(0, trap.TRAP_FMT_UNIREC, "")
 # Specifier of UniRec records will be received during libtrap negotiation
 UR_Flow = None
 
-option_dict, prop_array,ip_range, export_interval,filename, time_window, stats_interval = ParseAdditionalParams(parser,ip_range,prop_array)
-try:
-   start_new_thread(DataProcess,(stats_interval,))
-   start_new_thread(ExportProces,(export_interval,filename))
-except Exception:
-   print traceback.format_exc()
+prop_array,ip_range, filename, time_window, is_learning= ParseAdditionalParams(parser,ip_range,prop_array)
 
 
 
@@ -274,24 +288,20 @@ while not trap.stop:
    
    rec = UR_Flow(data)
    
-   if newest_time < rec.TIME_LAST.getSec():
-      newest_time = rec.TIME_LAST.getSec()
+   #print "cas", rec.TIME_LAST.toString("%Y-%m-%d %H:%M:%S")
+   if incounter == 0:
+      stats_trigger = rec.TIME_LAST.getSec()
    
-   oldest_time = newest_time - time_window
-   print "cas", rec.TIME_LAST.toString("%Y-%m-%d %H:%M:%S")
-   if incounter > learning_interval:
-      is_learning = False
 
-   FlowProcess(is_learning,gr)
+   FlowProcess(is_learning,rec, gr, prop_array, ip_range,stats_trigger)
    
    incounter+=1  
-   
-
-
-
-time.sleep(export_interval+1)
-print gr.nodes()
-print gr.edges() 
+print "islearning",is_learning
+if is_learning == True:
+   "export graph"
+   ExportData(filename)
+#print gr.nodes()
+#print gr.edges() 
 print incounter
 #nx.draw_networkx(gr,with_labels=True)
 #p.show()
