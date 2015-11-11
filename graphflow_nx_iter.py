@@ -4,7 +4,7 @@ import pdb
 import sys
 import os.path
 import traceback
-sys.path.append(os.path.join(os.path.dirname(__file__), "..", "..", "python","/home/tom/nemea/nemea-install/share/nemea-python","/home/tom/nemea/nemea-install/","/home/tom/nemea/nemea-install/lib"))
+sys.path.append(os.path.join(os.path.dirname(__file__), "..", "..", "..","python","/home/tom/nemea/nemea-install/share/nemea-python","/home/tom/nemea/nemea-install/","/home/tom/nemea/nemea-install/lib", "/home/tom/nemea/nemea/nemea-framework/python"))
 import trap
 import unirec
 #from py2neo import Graph, Node, Relationship,authenticate
@@ -12,13 +12,11 @@ import networkx as nx
 #import graph_tool.all as grt
 from datetime import datetime
 import time
-import pylab as p
 from thread import start_new_thread,allocate_lock
 import  ipaddress
 import json
 from networkx.readwrite import json_graph
-
-lock = allocate_lock() 
+ 
 gr=nx.DiGraph()
 
 time_window = 0
@@ -34,14 +32,15 @@ option_dict = None
 ip_range = None
 allowed_properties = ["PORT","BYTES", "PACKETS", "DST_PORT", "SRC_PORT", "HTTP_RSP_CODE", "PROTOCOL", "TCP_FLAGS", "TTL", "TIME_FIRST", "TIME_LAST"]
 incounter = 0
-is_learning = True
+is_learning = None
+stats_trigger = 0
 
 
 # How to add options of module
 from optparse import OptionParser
 parser = OptionParser(add_help_option=False)
 parser.add_option("-l", "--learning",
-         dest="learning",default=False,
+          action="store_true",dest="learning",default=False,
          help="Turns learning phase on and off. Choose True/False")
 parser.add_option("-p", "--properties",
          dest="properties",default=None,
@@ -64,28 +63,34 @@ parser.add_option("-q", "--quiet",
 #------------------------------------------------------
 
 
-def FlowProcess(is_learning,rec, gr, prop_array, ip_range,stats_trigger):
+def FlowProcess(is_learning,rec, gr, prop_array, ip_range):
+   global stats_trigger
    gr = AddRecord(rec, gr, prop_array, ip_range)
-   if is_learning == False:
+   #print type(is_learning), is_learning
+   if is_learning is False: 
       if rec.TIME_LAST.getSec() > stats_trigger:
+         print "twindow", time_window
          stats_trigger += time_window
+         StructureDataProcess()
+         #TimeStructureDataProcess()
 
-
-
-
+         
          gr.clear()
    
+   return gr
+
+def TimeStructureDataProcess():
+   print "detailed data process"
 
 
-
-def DataProcess(stats_interval):
+def StructureDataProcess():
    addresses_used = set()
    addresses_added = set()
    edges_used = set()
    edges_added = set()
    edges_removed =set()
    addresses_removed = set()
-   edge_new = set()
+   edgesdge_new = set()
    addresses_new =set()
    addresses_last = set()
    edges_last = set()
@@ -93,39 +98,21 @@ def DataProcess(stats_interval):
    edges_first_removed = set()
    addresses_past_removed =set()
    edges_past_removed =set()
-   while True:
-      lock.acquire()
-      RemoveOldData()
-      #print addresses_used
-      #print gr.nodes()
-      addresses_new = set(gr.nodes()).difference(addresses_used)
-      addresses_added = set(gr.nodes()).difference(addresses_last)
-      addresses_used.update(addresses_new)
-      edges_new =  set(gr.edges()).difference(edges_used)
-      edges_added = set(gr.edges()).difference(edges_last)
-      edges_used.update(edges_new)
-      addresses_removed = addresses_last.difference(set(gr.nodes()))
-      addresses_first_removed = addresses_used.difference(addresses_past_removed).difference(set(gr.nodes()))
-      addresses_past_removed.update(addresses_first_removed)
-      edges_removed = edges_last.difference(set(gr.edges()))
-      edges_first_removed = edges_used.difference(edges_past_removed).difference(set(gr.edges()))
-      edges_past_removed.update(edges_first_removed)
-      
-
-      #print addresses_removed
-      #print edges_removed
-      #print "addresses first added", addresses_new
-      #print "edges first added", edges_new
-      #print "addr fst removed",addresses_first_removed
-      #print "add removed", addresses_removed
-      #for addr in addresses_used:
-      #   CheckAddrExists(addr,is_learning)
-      #for edge in edges_used:
-      #   CheckEdgeExists(str(edge),is_learning)
-      edges_last = set(gr.edges())
-      addresses_last = set(gr.nodes())
-      lock.release()   
-      time.sleep(stats_interval)
+   print "check start"   
+   #print addresses_used
+   #print gr.nodes()
+   addresses_new = set(gr.nodes()).difference(set(gr_learned.nodes()))
+   #addresses_used.update(addresses_new)
+   #edges_new =  set(gr.edges()).difference(set(gr_learned.edges()))
+   #edges_used.update(edges_new)
+   #addresses_removed = set(gr_learned.nodes()).difference(set(gr.nodes()))
+   #edges_removed = set(gr_learned.edges()).difference(set(gr.edges()))
+   
+   print "check stop"
+   print "new addresses",addresses_new
+   #print len(addresses_removed)
+   #print len(edges_removed)
+   #print "add removed", len(addresses_removed)          
 
 #--------------------------------------------------------
 
@@ -156,19 +143,10 @@ def CheckIPRange(ip,ip_range):
 
 
 def AddTimeInfo(src_ip, dst_ip, rec,gr):
-   #if not rec.TIME_LAST.toString("%a") in gr[src_ip][dst_ip]['time']:
-   #   gr[src_ip][dst_ip]['time'] = {}
-   #   gr[src_ip][dst_ip]['time'][rec.TIME_LAST.toString("%a")] = {}
-   #   gr[src_ip][dst_ip]['time'][rec.TIME_LAST.toString("%a")][rec.TIME_LAST.toString("%H")] = {}
-   #   gr[src_ip][dst_ip]['time'][rec.TIME_LAST.toString("%a")][rec.TIME_LAST.toString("%H")][rec.TIME_LAST.toString("%M")] = 1
-   #if not rec.TIME_LAST.toString("%a") in gr[src_ip][dst_ip]['time']:
    if rec.TIME_LAST.toString("%M") in gr[src_ip][dst_ip]['time'][rec.TIME_LAST.toString("%a")][rec.TIME_LAST.toString("%H")]:
       gr[src_ip][dst_ip]['time'][rec.TIME_LAST.toString("%a")][rec.TIME_LAST.toString("%H")][rec.TIME_LAST.toString("%M")] += 1
    else:
       gr[src_ip][dst_ip]['time'][rec.TIME_LAST.toString("%a")][rec.TIME_LAST.toString("%H")][rec.TIME_LAST.toString("%M")] = 1    
-   #print type(rec.TIME_LAST.toString("%M")), type(gr[src_ip][dst_ip]['time'][rec.TIME_LAST.toString("%a")][rec.TIME_LAST.toString("%H")][rec.TIME_LAST.toString("%M")]) 
-   #if gr[src_ip][dst_ip]['time'][rec.TIME_LAST.toString("%a")][rec.TIME_LAST.toString("%H")][rec.TIME_LAST.toString("%M")] > 1:
-   #   print src_ip,dst_ip, gr[src_ip][dst_ip]['time'][rec.TIME_LAST.toString("%a")][rec.TIME_LAST.toString("%H")]
    return gr
 
 def AddRecord(rec, gr, properties,ip_range):
@@ -208,9 +186,9 @@ def RemoveOldData():
 
 def ParseAdditionalParams(parser,ip_range, prop_array):
    options, args = parser.parse_args()
-   option_dict = vars(options)
-   properties = option_dict['properties']
-   ip_range = option_dict['ip_range']
+  
+   properties = options.properties
+   ip_range = options.ip_range
    if properties is not None:
       prop_array = properties.split(',')
    
@@ -218,18 +196,27 @@ def ParseAdditionalParams(parser,ip_range, prop_array):
       ip_range = ip_range.split('-')
       ip_range = list(ipaddress.summarize_address_range(ipaddress.ip_address(unicode(ip_range[0], "utf-8")), ipaddress.ip_address(unicode(ip_range[1], "utf-8"))))
    
-
-   return prop_array,ip_range, option_dict['filename'],int(option_dict['time_window']),bool(option_dict['learning'])
+   
+   return prop_array,ip_range, options.filename,int(options.time_window), options.learning
    
 
 def ExportData(directory = "data"):
    print "exporting data"
+   
    if not os.path.exists(directory):
       os.makedirs(directory)
    with open(str(directory)+"/learned.json", 'w') as outfile1:
-      outfile1.write(json.dumps(json_graph.node_link_data(gr)))      
+      outfile1.write(json.dumps(json_graph.node_link_data(gr),sort_keys=True, indent=2, separators=(',', ': ')))      
    
-      
+def ReadLearnedData(directory = "data"):
+   if not os.path.exists(directory):
+      print "could not find learned data"
+      return
+   with open(str(directory)+"/learned.json", 'r') as infile1:
+      data = json.loads(infile1.read())
+   graph = json_graph.node_link_graph(data, directed=True, multigraph=False, attrs={'id':'id', 'source': 'source', 'target': 'target', 'last_seen': 'last_seen', 'time': 'time', 'weight':'weight'})
+   #print graph['254.158.184.235']['106.53.240.142']['time']
+   return graph      
 
 
 
@@ -256,7 +243,9 @@ trap.set_required_fmt(0, trap.TRAP_FMT_UNIREC, "")
 UR_Flow = None
 
 prop_array,ip_range, filename, time_window, is_learning= ParseAdditionalParams(parser,ip_range,prop_array)
-
+print "islearning", is_learning
+if is_learning == False:
+   gr_learned = ReadLearnedData()
 
 
 # Main loop (trap.stop is set to True when SIGINT or SIGTERM is received)
@@ -293,10 +282,10 @@ while not trap.stop:
       stats_trigger = rec.TIME_LAST.getSec()
    
 
-   FlowProcess(is_learning,rec, gr, prop_array, ip_range,stats_trigger)
+   gr = FlowProcess(is_learning,rec, gr, prop_array, ip_range)
    
    incounter+=1  
-print "islearning",is_learning
+
 if is_learning == True:
    "export graph"
    ExportData(filename)
