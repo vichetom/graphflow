@@ -72,7 +72,7 @@ def FlowProcess(is_learning,rec, gr, prop_array, ip_range):
          print "twindow", time_window
          stats_trigger += time_window
          StructureDataProcess()
-         #TimeStructureDataProcess()
+         TimeStructureDataProcess()
 
          
          gr.clear()
@@ -81,8 +81,15 @@ def FlowProcess(is_learning,rec, gr, prop_array, ip_range):
 
 def TimeStructureDataProcess():
    print "detailed data process"
-
-
+   for node_id,node_attrs in gr.nodes(data=True):
+      if node_id in gr_learned.nodes():
+         for day in node_attrs['time']:
+            if day in gr_learned.node[node_id]['time']:
+               for hour in gr_learned.node[node_id]['time'][day]: 
+                  if hour in gr_learned.node[node_id]['time'][day]:
+                     for minute in gr_learned.node[node_id]['time'][day][hour]:
+                        print "minute", minute
+            
 def StructureDataProcess():
    addresses_used = set()
    addresses_added = set()
@@ -97,8 +104,7 @@ def StructureDataProcess():
    addresses_first_removed = set()
    edges_first_removed = set()
    addresses_past_removed =set()
-   edges_past_removed =set()
-   print "check start"   
+   edges_past_removed =set()   
    #print addresses_used
    #print gr.nodes()
    addresses_new = set(gr.nodes()).difference(set(gr_learned.nodes()))
@@ -108,8 +114,7 @@ def StructureDataProcess():
    #addresses_removed = set(gr_learned.nodes()).difference(set(gr.nodes()))
    #edges_removed = set(gr_learned.edges()).difference(set(gr.edges()))
    
-   print "check stop"
-   print "new addresses",addresses_new
+   #print "new addresses",addresses_new
    #print len(addresses_removed)
    #print len(edges_removed)
    #print "add removed", len(addresses_removed)          
@@ -119,18 +124,17 @@ def StructureDataProcess():
 
 def UpdateParameters(src_ip,dst_ip,rec,properties):
    for p in properties:
-      p_cut = p
       str(getattr(rec,p))
-      if p_cut in gr.edge[src_ip][dst_ip]:
-         if not str(getattr(rec,p)) in gr.edge[src_ip][dst_ip][p_cut]:
-            gr.edge[src_ip][dst_ip][p_cut][str(getattr(rec,p))] = 1
+      if p in gr.edge[src_ip][dst_ip]:
+         if not str(getattr(rec,p)) in gr.edge[src_ip][dst_ip][p]:
+            gr.edge[src_ip][dst_ip][p][str(getattr(rec,p))] = 1
          else:
-            gr.edge[src_ip][dst_ip][p_cut][str(getattr(rec,p))] = gr.edge[src_ip][dst_ip][p_cut][str(getattr(rec,p))] + 1
+            gr.edge[src_ip][dst_ip][p][str(getattr(rec,p))] = gr.edge[src_ip][dst_ip][p][str(getattr(rec,p))] + 1
          
       else:
-         gr.edge[src_ip][dst_ip][p_cut] = {}
-         gr.edge[src_ip][dst_ip][p_cut][str(getattr(rec,p))] = 1
-      #print gr.edge[src_ip][dst_ip][p_cut]
+         gr.edge[src_ip][dst_ip][p] = {}
+         gr.edge[src_ip][dst_ip][p][str(getattr(rec,p))] = 1
+      #print gr.edge[src_ip][dst_ip][p]
    return gr
 
 def CheckIPRange(ip,ip_range):
@@ -142,11 +146,17 @@ def CheckIPRange(ip,ip_range):
    return ip
 
 
-def AddTimeInfo(src_ip, dst_ip, rec,gr):
+def AddEdgeTimeInfo(src_ip, dst_ip, rec,gr):
    if rec.TIME_LAST.toString("%M") in gr[src_ip][dst_ip]['time'][rec.TIME_LAST.toString("%a")][rec.TIME_LAST.toString("%H")]:
       gr[src_ip][dst_ip]['time'][rec.TIME_LAST.toString("%a")][rec.TIME_LAST.toString("%H")][rec.TIME_LAST.toString("%M")] += 1
    else:
       gr[src_ip][dst_ip]['time'][rec.TIME_LAST.toString("%a")][rec.TIME_LAST.toString("%H")][rec.TIME_LAST.toString("%M")] = 1    
+   return gr
+def AddNodeTimeInfo(ip,rec,gr):
+   if rec.TIME_LAST.toString("%M") in gr.node[ip]['time'][rec.TIME_LAST.toString("%a")][rec.TIME_LAST.toString("%H")]:
+      gr.node[ip]['time'][rec.TIME_LAST.toString("%a")][rec.TIME_LAST.toString("%H")][rec.TIME_LAST.toString("%M")] += 1
+   else:
+      gr.node[ip]['time'][rec.TIME_LAST.toString("%a")][rec.TIME_LAST.toString("%H")][rec.TIME_LAST.toString("%M")] = 1    
    return gr
 
 def AddRecord(rec, gr, properties,ip_range):
@@ -156,10 +166,23 @@ def AddRecord(rec, gr, properties,ip_range):
    
    #print src_ip,dst_ip 
    if src_ip != dst_ip:
+      if gr.has_node(src_ip):
+         gr.node[src_ip]['weight'] +=1
+         gr.node[src_ip]['last_seen'] = rec.TIME_LAST.getSec()
+         gr = AddNodeTimeInfo(src_ip,rec,gr)
+      else:
+         gr.add_node(src_ip,weight = 1, last_seen = rec.TIME_LAST.getSec(), time = {rec.TIME_LAST.toString("%a") : {rec.TIME_LAST.toString("%H") : {rec.TIME_LAST.toString("%M") : 1}}})
+      if gr.has_node(dst_ip):
+         gr.node[dst_ip]['weight'] += 1
+         gr.node[dst_ip]['last_seen'] = rec.TIME_LAST.getSec()
+         gr = AddNodeTimeInfo(dst_ip,rec,gr)
+      else:
+         gr.add_node(dst_ip,weight = 1, last_seen = rec.TIME_LAST.getSec(), time = {rec.TIME_LAST.toString("%a") : {rec.TIME_LAST.toString("%H") : {rec.TIME_LAST.toString("%M") : 1}}})
+
       if gr.has_edge(src_ip,dst_ip):
          gr[src_ip][dst_ip]['weight'] += 1
          gr[src_ip][dst_ip]['last_seen'] = rec.TIME_LAST.getSec()
-         gr = AddTimeInfo(src_ip,dst_ip, rec,gr)
+         gr = AddEdgeTimeInfo(src_ip,dst_ip, rec,gr)
          
          if properties is not None:
             gr = UpdateParameters(src_ip,dst_ip,rec,properties)
