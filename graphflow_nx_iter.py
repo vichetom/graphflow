@@ -18,7 +18,7 @@ import json
 from networkx.readwrite import json_graph
  
 gr=nx.DiGraph()
-
+rec_buffer = []
 time_window = 0
 time_stats_window = 0
 stats_interval = 0
@@ -34,7 +34,7 @@ allowed_properties = ["PORT","BYTES", "PACKETS", "DST_PORT", "SRC_PORT", "HTTP_R
 incounter = 0
 is_learning = None
 stats_trigger = 0
-
+minute_accuracy = 3
 
 # How to add options of module
 from optparse import OptionParser
@@ -49,8 +49,8 @@ parser.add_option("-r", "--ip-range",
          dest="ip_range",default=None,
          help="Set range of ip addresses in local network first ip-last ip ")
 parser.add_option("-t", "--time-window",
-         dest="time_window",default=60,
-         help="Set size of time window for keeping data in seconds. Defalut is 60 sec.")
+         dest="time_window",default=10,
+         help="Set size of time window for keeping data in minutes. Defalut is 5min. Minimum 2 min.")
 parser.add_option("-e", "--export-interval",
          dest="export_interval",default=60,
          help="Set data export interval. Default is 60 sec.")
@@ -65,31 +65,51 @@ parser.add_option("-q", "--quiet",
 
 def FlowProcess(is_learning,rec, gr, prop_array, ip_range):
    global stats_trigger
-   gr = AddRecord(rec, gr, prop_array, ip_range)
+   global rec_buffer
+   #print rec.TIME_LAST.getSec(), stats_trigger  
+   if rec.TIME_LAST.getSec() >= stats_trigger - 60 and is_learning is False:
+      rec_buffer.append(rec)
+   else:
+      gr = AddRecord(rec, gr, prop_array, ip_range)
    #print type(is_learning), is_learning
    if is_learning is False: 
       if rec.TIME_LAST.getSec() > stats_trigger:
+         print rec, stats_trigger
          print "twindow", time_window
-         stats_trigger += time_window
          StructureDataProcess()
-         TimeStructureDataProcess()
+         TimeStructureDataProcess(stats_trigger)
 
-         
+         stats_trigger += time_window
          gr.clear()
-   
+         print "cleared"
+         for record in rec_buffer:
+            gr = AddRecord(record, gr, prop_array, ip_range)
+         rec_buffer = []
+   #print "actual", gr.nodes()
    return gr
 
-def TimeStructureDataProcess():
-   print "detailed data process"
+def TimeStructureDataProcess(stats_trigger):
+   #print "detailed data process", (stats_trigger - (stats_trigger%60)), time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(stats_trigger - (stats_trigger%60)))
+   #print day_process
    for node_id,node_attrs in gr.nodes(data=True):
       if node_id in gr_learned.nodes():
          for day in node_attrs['time']:
+            #print type(day), type(day_process)
             if day in gr_learned.node[node_id]['time']:
-               for hour in gr_learned.node[node_id]['time'][day]: 
+               for hour in node_attrs['time'][day]: 
                   if hour in gr_learned.node[node_id]['time'][day]:
-                     for minute in gr_learned.node[node_id]['time'][day][hour]:
-                        print "minute", minute
-            
+                     for minute in node_attrs['time'][day][hour]:
+                        if minute in gr_learned.node[node_id]['time'][day][hour]:
+                           minute_actual_count = node_attrs['time'][day][hour][minute] 
+                           minute_learned_count = gr_learned.node[node_id]['time'][day][hour][minute]
+                           print node_id, minute_actual_count,minute_learned_count -(minute_learned_count/minute_accuracy), minute_learned_count + (minute_learned_count/minute_accuracy)
+                           if  (minute_actual_count >= (minute_learned_count - (minute_learned_count/minute_accuracy))) and (minute_actual_count <= (minute_learned_count + (minute_learned_count/minute_accuracy))):
+                              print "node minute freqency",minute_actual_count,"ok with accuracy", minute_learned_count - (minute_learned_count/minute_accuracy), minute_learned_count + (minute_learned_count/minute_accuracy)
+                           else:
+                              print "node minute frequency" ,minute_actual_count,"not ok with accuracy", (minute_learned_count - (minute_learned_count/minute_accuracy)), (minute_learned_count + (minute_learned_count/minute_accuracy))
+                        else: 
+                           print "node not in minute", minute 
+
 def StructureDataProcess():
    addresses_used = set()
    addresses_added = set()
@@ -220,7 +240,7 @@ def ParseAdditionalParams(parser,ip_range, prop_array):
       ip_range = list(ipaddress.summarize_address_range(ipaddress.ip_address(unicode(ip_range[0], "utf-8")), ipaddress.ip_address(unicode(ip_range[1], "utf-8"))))
    
    
-   return prop_array,ip_range, options.filename,int(options.time_window), options.learning
+   return prop_array,ip_range, options.filename,int(options.time_window)*60, options.learning
    
 
 def ExportData(directory = "data"):
@@ -302,7 +322,7 @@ while not trap.stop:
    
    #print "cas", rec.TIME_LAST.toString("%Y-%m-%d %H:%M:%S")
    if incounter == 0:
-      stats_trigger = rec.TIME_LAST.getSec()
+      stats_trigger = rec.TIME_LAST.getSec() - (rec.TIME_LAST.getSec()%60) + 60 
    
 
    gr = FlowProcess(is_learning,rec, gr, prop_array, ip_range)
