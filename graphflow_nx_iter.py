@@ -12,10 +12,10 @@ import networkx as nx
 #import graph_tool.all as grt
 from datetime import datetime
 import time
-from thread import start_new_thread,allocate_lock
 import  ipaddress
 import json
 from networkx.readwrite import json_graph
+import logging
  
 gr=nx.DiGraph()
 rec_buffer = []
@@ -36,6 +36,15 @@ is_learning = None
 stats_trigger = 0
 minute_accuracy = 3
 
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
+
+handler = logging.FileHandler('graphflow.log')
+handler.setLevel(logging.INFO)
+formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+handler.setFormatter(formatter)
+logger.addHandler(handler)
+
 # How to add options of module
 from optparse import OptionParser
 parser = OptionParser(add_help_option=False)
@@ -54,7 +63,7 @@ parser.add_option("-t", "--time-window",
 parser.add_option("-e", "--export-interval",
          dest="export_interval",default=60,
          help="Set data export interval. Default is 60 sec.")
-parser.add_option("-f", "--file", dest="filename",
+parser.add_option("-d", "--directory", dest="directory",
          help="Set directory to save data. If parameter is not set, data are not saved.", metavar="FILE")
 parser.add_option("-q", "--quiet",
          action="store_false", dest="verbose", default=True,
@@ -104,7 +113,8 @@ def TimeStructureDataProcess(stats_trigger):
                            minute_learned_count = gr_learned.node[node_id]['time'][day][hour][minute]
                            print node_id, minute_actual_count,minute_learned_count -(minute_learned_count/minute_accuracy), minute_learned_count + (minute_learned_count/minute_accuracy)
                            if  (minute_actual_count >= (minute_learned_count - (minute_learned_count/minute_accuracy))) and (minute_actual_count <= (minute_learned_count + (minute_learned_count/minute_accuracy))):
-                              print "node minute freqency",minute_actual_count,"ok with accuracy", minute_learned_count - (minute_learned_count/minute_accuracy), minute_learned_count + (minute_learned_count/minute_accuracy)
+                              logger.info('Node %s minute freqency %s OK with count accuracy %s - %s in %s',node_id, minute_actual_count, minute_learned_count - (minute_learned_count/minute_accuracy), minute_learned_count + (minute_learned_count/minute_accuracy), time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(node_attrs['last_seen'])))
+                              #print "node minute freqency",minute_actual_count,"ok with accuracy", minute_learned_count - (minute_learned_count/minute_accuracy), minute_learned_count + (minute_learned_count/minute_accuracy)
                            else:
                               print "node minute frequency" ,minute_actual_count,"not ok with accuracy", (minute_learned_count - (minute_learned_count/minute_accuracy)), (minute_learned_count + (minute_learned_count/minute_accuracy))
                         else: 
@@ -240,7 +250,7 @@ def ParseAdditionalParams(parser,ip_range, prop_array):
       ip_range = list(ipaddress.summarize_address_range(ipaddress.ip_address(unicode(ip_range[0], "utf-8")), ipaddress.ip_address(unicode(ip_range[1], "utf-8"))))
    
    
-   return prop_array,ip_range, options.filename,int(options.time_window)*60, options.learning
+   return prop_array,ip_range, options.directory,int(options.time_window)*60, options.learning
    
 
 def ExportData(directory = "data"):
@@ -285,10 +295,11 @@ trap.set_required_fmt(0, trap.TRAP_FMT_UNIREC, "")
 # Specifier of UniRec records will be received during libtrap negotiation
 UR_Flow = None
 
-prop_array,ip_range, filename, time_window, is_learning= ParseAdditionalParams(parser,ip_range,prop_array)
+prop_array,ip_range, directory, time_window, is_learning= ParseAdditionalParams(parser,ip_range,prop_array)
 print "islearning", is_learning
 if is_learning == False:
    gr_learned = ReadLearnedData()
+
 
 
 # Main loop (trap.stop is set to True when SIGINT or SIGTERM is received)
@@ -331,7 +342,7 @@ while not trap.stop:
 
 if is_learning == True:
    "export graph"
-   ExportData(filename)
+   ExportData(directory)
 #print gr.nodes()
 #print gr.edges() 
 print incounter
