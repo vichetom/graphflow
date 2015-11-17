@@ -114,15 +114,16 @@ def TimeStructureDataProcess(stats_trigger):
       day,hour,minute = time.strftime('%a %H %M', time.gmtime(time_check - 60)).split()
       for node_learned, data_learned in gr_learned.nodes(data=True):
          
-         
          try:
             data_learned['time'][day][hour][minute]
+            #print data_learned
          except KeyError:
             continue
          #print "checking gr node"
 
          try:
             gr.node[node_learned]['time'][day][hour][minute]
+            #print gr.node[node_learned]
          except KeyError:
             logger.warning('Node %s not in graph in time %s', node_learned,day + hour + minute)
       time_check += 60
@@ -197,12 +198,22 @@ def CheckIPRange(ip,ip_range):
 
 
 def AddEdgeTimeInfo(src_ip, dst_ip, rec,gr):
+   if rec.TIME_LAST.toString("%a") not in gr[src_ip][dst_ip]['time']:
+      gr[src_ip][dst_ip]['time'][rec.TIME_LAST.toString("%a")] = {}
+   if rec.TIME_LAST.toString("%H") not in gr[src_ip][dst_ip]['time'][rec.TIME_LAST.toString("%a")]:
+      gr[src_ip][dst_ip]['time'][rec.TIME_LAST.toString("%a")][rec.TIME_LAST.toString("%H")] = {}
+
    if rec.TIME_LAST.toString("%M") in gr[src_ip][dst_ip]['time'][rec.TIME_LAST.toString("%a")][rec.TIME_LAST.toString("%H")]:
       gr[src_ip][dst_ip]['time'][rec.TIME_LAST.toString("%a")][rec.TIME_LAST.toString("%H")][rec.TIME_LAST.toString("%M")] += 1
    else:
       gr[src_ip][dst_ip]['time'][rec.TIME_LAST.toString("%a")][rec.TIME_LAST.toString("%H")][rec.TIME_LAST.toString("%M")] = 1    
    return gr
+
 def AddNodeTimeInfo(ip,rec,gr):
+   if rec.TIME_LAST.toString("%a") not in gr.node[ip]['time']:
+      gr.node[ip]['time'][rec.TIME_LAST.toString("%a")] = {}
+   if rec.TIME_LAST.toString("%H") not in gr.node[ip]['time'][rec.TIME_LAST.toString("%a")]:
+      gr.node[ip]['time'][rec.TIME_LAST.toString("%a")][rec.TIME_LAST.toString("%H")] = {}
    if rec.TIME_LAST.toString("%M") in gr.node[ip]['time'][rec.TIME_LAST.toString("%a")][rec.TIME_LAST.toString("%H")]:
       gr.node[ip]['time'][rec.TIME_LAST.toString("%a")][rec.TIME_LAST.toString("%H")][rec.TIME_LAST.toString("%M")] += 1
    else:
