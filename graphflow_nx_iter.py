@@ -12,6 +12,7 @@ import networkx as nx
 #import graph_tool.all as grt
 from datetime import datetime
 import time
+import datetime
 import  ipaddress
 import json
 from networkx.readwrite import json_graph
@@ -39,9 +40,9 @@ minute_accuracy = 3
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
-handler = logging.FileHandler('graphflow.log')
+handler = logging.FileHandler('graphflow.log'+str(datetime.datetime.now()))
 handler.setLevel(logging.INFO)
-formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
 handler.setFormatter(formatter)
 logger.addHandler(handler)
 
@@ -76,15 +77,13 @@ def FlowProcess(is_learning,rec, gr, prop_array, ip_range):
    global stats_trigger
    global rec_buffer
    #print rec.TIME_LAST.getSec(), stats_trigger  
-   if rec.TIME_LAST.getSec() >= stats_trigger - 60 and is_learning is False:
+   if rec.TIME_LAST.getSec() > stats_trigger - 60 and is_learning is False:
       rec_buffer.append(rec)
    else:
       gr = AddRecord(rec, gr, prop_array, ip_range)
    #print type(is_learning), is_learning
    if is_learning is False: 
       if rec.TIME_LAST.getSec() > stats_trigger:
-         print rec, stats_trigger
-         print "twindow", time_window
          StructureDataProcess()
          TimeStructureDataProcess(stats_trigger)
 
@@ -97,57 +96,78 @@ def FlowProcess(is_learning,rec, gr, prop_array, ip_range):
    #print "actual", gr.nodes()
    return gr
 
+
+def StrDatetime(time_str, time_format):
+   return datetime.datetime.strptime(time_str, time_format)
+
+
 def TimeStructureDataProcess(stats_trigger):
    #print "detailed data process", (stats_trigger - (stats_trigger%60)), time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(stats_trigger - (stats_trigger%60)))
    #print day_process
+   day_end,hour_end,minute_end = time.strftime('%a %H %M', time.localtime(stats_trigger - 60)).split()
+   day_start,hour_end,minute_end = time.strftime('%a %H %M', time.localtime(stats_trigger - 60)).split()
+   #print time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(stats_trigger - 60 - time_window))
+   
+   time_check = stats_trigger - time_window
+   while time_check <= stats_trigger - 60:
+      print time_check, stats_trigger -60
+      day,hour,minute = time.strftime('%a %H %M', time.gmtime(time_check - 60)).split()
+      for node_learned, data_learned in gr_learned.nodes(data=True):
+         
+         
+         try:
+            data_learned['time'][day][hour][minute]
+         except KeyError:
+            continue
+         #print "checking gr node"
+
+         try:
+            gr.node[node_learned]['time'][day][hour][minute]
+         except KeyError:
+            logger.warning('Node %s not in graph in time %s', node_learned,day + hour + minute)
+      time_check += 60
+   
+   
+
    for node_id,node_attrs in gr.nodes(data=True):
       if node_id in gr_learned.nodes():
          for day in node_attrs['time']:
-            #print type(day), type(day_process)
-            if day in gr_learned.node[node_id]['time']:
-               for hour in node_attrs['time'][day]: 
-                  if hour in gr_learned.node[node_id]['time'][day]:
-                     for minute in node_attrs['time'][day][hour]:
+            for hour in node_attrs['time'][day]: 
+               for minute in node_attrs['time'][day][hour]:
+                  if day in gr_learned.node[node_id]['time']:
+                     if hour in gr_learned.node[node_id]['time'][day]:
                         if minute in gr_learned.node[node_id]['time'][day][hour]:
+                           #print StrDatetime(day + hour + minute,"%a%H%M") - datetime.timedelta(minutes=1),  StrDatetime(day + hour + minute,"%a%H%M") + datetime.timedelta(minutes=1)
                            minute_actual_count = node_attrs['time'][day][hour][minute] 
                            minute_learned_count = gr_learned.node[node_id]['time'][day][hour][minute]
-                           print node_id, minute_actual_count,minute_learned_count -(minute_learned_count/minute_accuracy), minute_learned_count + (minute_learned_count/minute_accuracy)
                            if  (minute_actual_count >= (minute_learned_count - (minute_learned_count/minute_accuracy))) and (minute_actual_count <= (minute_learned_count + (minute_learned_count/minute_accuracy))):
-                              logger.info('Node %s minute freqency %s OK with count accuracy %s - %s in %s',node_id, minute_actual_count, minute_learned_count - (minute_learned_count/minute_accuracy), minute_learned_count + (minute_learned_count/minute_accuracy), time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(node_attrs['last_seen'])))
+                              logger.info('Node %s minute freqency %s OK with count accuracy %s - %s in %s',node_id, minute_actual_count, minute_learned_count - (minute_learned_count/minute_accuracy), minute_learned_count + (minute_learned_count/minute_accuracy),  day+hour+minute)
                               #print "node minute freqency",minute_actual_count,"ok with accuracy", minute_learned_count - (minute_learned_count/minute_accuracy), minute_learned_count + (minute_learned_count/minute_accuracy)
                            else:
-                              print "node minute frequency" ,minute_actual_count,"not ok with accuracy", (minute_learned_count - (minute_learned_count/minute_accuracy)), (minute_learned_count + (minute_learned_count/minute_accuracy))
-                        else: 
-                           print "node not in minute", minute 
+                              logger.warning('Node %s minute freqency %s  NOT OK with count accuracy %s - %s in %s',node_id, minute_actual_count, minute_learned_count - (minute_learned_count/minute_accuracy), minute_learned_count + (minute_learned_count/minute_accuracy),  day+hour+minute)
+                        else:
+                           logger.warning('Node %s not in minute %s in  %s',node_id, minute,day + hour + minute)                      
+                     else:
+                        logger.warning('Node %s not in hour %s, in %s', node_id, hour, day + hour + minute)   
+                  else:
+                     logger.warning('Node %s not in day %s, in %s', node_id, day, day + hour + minute)
+                   
+      else:
+         logger.warning('New node %s',node_id)
+                     
 
 def StructureDataProcess():
-   addresses_used = set()
-   addresses_added = set()
-   edges_used = set()
-   edges_added = set()
    edges_removed =set()
    addresses_removed = set()
-   edgesdge_new = set()
-   addresses_new =set()
-   addresses_last = set()
-   edges_last = set()
-   addresses_first_removed = set()
-   edges_first_removed = set()
-   addresses_past_removed =set()
-   edges_past_removed =set()   
-   #print addresses_used
-   #print gr.nodes()
-   addresses_new = set(gr.nodes()).difference(set(gr_learned.nodes()))
-   #addresses_used.update(addresses_new)
-   #edges_new =  set(gr.edges()).difference(set(gr_learned.edges()))
-   #edges_used.update(edges_new)
-   #addresses_removed = set(gr_learned.nodes()).difference(set(gr.nodes()))
-   #edges_removed = set(gr_learned.edges()).difference(set(gr.edges()))
+
+
+#   addresses_removed = set(gr_learned.nodes()).difference(set(gr.nodes()))
+#   edges_removed = set(gr_learned.edges()).difference(set(gr.edges()))
+#   logger.warning('Addresses removed: %s',addresses_removed)
+#   logger.warning('Edges removed: %s', edges_removed)
+
    
-   #print "new addresses",addresses_new
-   #print len(addresses_removed)
-   #print len(edges_removed)
-   #print "add removed", len(addresses_removed)          
+
 
 #--------------------------------------------------------
 
@@ -333,7 +353,7 @@ while not trap.stop:
    
    #print "cas", rec.TIME_LAST.toString("%Y-%m-%d %H:%M:%S")
    if incounter == 0:
-      stats_trigger = rec.TIME_LAST.getSec() - (rec.TIME_LAST.getSec()%60) + 60 
+      stats_trigger = rec.TIME_LAST.getSec() - (rec.TIME_LAST.getSec()%60)  
    
 
    gr = FlowProcess(is_learning,rec, gr, prop_array, ip_range)
