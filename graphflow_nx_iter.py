@@ -33,9 +33,13 @@ option_dict = None
 ip_range = None
 allowed_properties = ["PORT","BYTES", "PACKETS", "DST_PORT", "SRC_PORT", "HTTP_RSP_CODE", "PROTOCOL", "TCP_FLAGS", "TTL", "TIME_FIRST", "TIME_LAST"]
 incounter = 0
-is_learning = None
+is_learning = False
 stats_trigger = 0
 minute_accuracy = 3
+first_timestamp = 0
+week_seconds = 604800
+time_last_seen = 0
+number_of_periods = 1
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
@@ -72,6 +76,27 @@ parser.add_option("-q", "--quiet",
 
 #------------------------------------------------------
 
+def CountAverageFlows():
+   day_last,hour_last, minute_last = time.strftime('%w %H %M', time.gmtime(time_last_seen)).split()
+   day_first,hour_first, minute_first = time.strftime('%w %H %M', time.gmtime(first_timestamp)).split() 
+   if day_last >  day_first or (day_last ==  day_first and hour_last > hour_first) or (day_last ==  day_first and hour_last == hour_first and minute_last > minute_first):
+      revers = False
+
+   print day_last,hour_last,minute_last
+   for node,attrs in gr.nodes(data=True):
+      for day in attrs['time']:
+         for hour in attrs['time'][day]:
+            for minute in attrs['time'][day][hour]:
+               relative_periods = number_of_periods
+               print hour,hour_first,hour_last
+               if day <  day_first or (day ==  day_first and hour < hour_first) or (day ==  day_first and hour == hour_first and minute < minute_first):
+                  print "decr 1"  
+                  relative_periods -= 1
+               if day >  day_last or (day ==  day_last and hour > hour_last) or (day ==  day_last and hour == hour_last and minute > minute_last):
+                  print "decr 2"
+                  relative_periods -= 1
+               print relative_periods
+       
 
 def FlowProcess(is_learning,rec, gr, prop_array, ip_range):
    global stats_trigger
@@ -104,14 +129,14 @@ def StrDatetime(time_str, time_format):
 def TimeStructureDataProcess(stats_trigger):
    #print "detailed data process", (stats_trigger - (stats_trigger%60)), time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(stats_trigger - (stats_trigger%60)))
    #print day_process
-   day_end,hour_end,minute_end = time.strftime('%a %H %M', time.localtime(stats_trigger - 60)).split()
-   day_start,hour_end,minute_end = time.strftime('%a %H %M', time.localtime(stats_trigger - 60)).split()
+   day_end,hour_end,minute_end = time.strftime('%w %H %M', time.localtime(stats_trigger - 60)).split()
+   day_start,hour_end,minute_end = time.strftime('%w %H %M', time.localtime(stats_trigger - 60)).split()
    #print time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(stats_trigger - 60 - time_window))
    
    time_check = stats_trigger - time_window
    while time_check <= stats_trigger - 60:
       print time_check, stats_trigger -60
-      day,hour,minute = time.strftime('%a %H %M', time.gmtime(time_check - 60)).split()
+      day,hour,minute = time.strftime('%w %H %M', time.gmtime(time_check - 60)).split()
       for node_learned, data_learned in gr_learned.nodes(data=True):
          
          try:
@@ -138,10 +163,10 @@ def TimeStructureDataProcess(stats_trigger):
                   if day in gr_learned.node[node_id]['time']:
                      if hour in gr_learned.node[node_id]['time'][day]:
                         if minute in gr_learned.node[node_id]['time'][day][hour]:
-                           #print StrDatetime(day + hour + minute,"%a%H%M") - datetime.timedelta(minutes=1),  StrDatetime(day + hour + minute,"%a%H%M") + datetime.timedelta(minutes=1)
+                           #print StrDatetime(day + hour + minute,"%w%H%M") - datetime.timedelta(minutes=1),  StrDatetime(day + hour + minute,"%w%H%M") + datetime.timedelta(minutes=1)
                            minute_actual_count = node_attrs['time'][day][hour][minute] 
                            minute_learned_count = gr_learned.node[node_id]['time'][day][hour][minute]
-                           if  (minute_actual_count >= (minute_learned_count - (minute_learned_count/minute_accuracy))) and (minute_actual_count <= (minute_learned_count + (minute_learned_count/minute_accuracy))):
+                           if (minute_actual_count >= (minute_learned_count - (minute_learned_count/minute_accuracy))) and (minute_actual_count <= (minute_learned_count + (minute_learned_count/minute_accuracy))):
                               logger.info('Node %s minute freqency %s OK with count accuracy %s - %s in %s',node_id, minute_actual_count, minute_learned_count - (minute_learned_count/minute_accuracy), minute_learned_count + (minute_learned_count/minute_accuracy),  day+hour+minute)
                               #print "node minute freqency",minute_actual_count,"ok with accuracy", minute_learned_count - (minute_learned_count/minute_accuracy), minute_learned_count + (minute_learned_count/minute_accuracy)
                            else:
@@ -161,16 +186,6 @@ def StructureDataProcess():
    edges_removed =set()
    addresses_removed = set()
 
-
-#   addresses_removed = set(gr_learned.nodes()).difference(set(gr.nodes()))
-#   edges_removed = set(gr_learned.edges()).difference(set(gr.edges()))
-#   logger.warning('Addresses removed: %s',addresses_removed)
-#   logger.warning('Edges removed: %s', edges_removed)
-
-   
-
-
-#--------------------------------------------------------
 
 
 def UpdateParameters(src_ip,dst_ip,rec,properties):
@@ -198,26 +213,26 @@ def CheckIPRange(ip,ip_range):
 
 
 def AddEdgeTimeInfo(src_ip, dst_ip, rec,gr):
-   if rec.TIME_LAST.toString("%a") not in gr[src_ip][dst_ip]['time']:
-      gr[src_ip][dst_ip]['time'][rec.TIME_LAST.toString("%a")] = {}
-   if rec.TIME_LAST.toString("%H") not in gr[src_ip][dst_ip]['time'][rec.TIME_LAST.toString("%a")]:
-      gr[src_ip][dst_ip]['time'][rec.TIME_LAST.toString("%a")][rec.TIME_LAST.toString("%H")] = {}
+   if rec.TIME_LAST.toString("%w") not in gr[src_ip][dst_ip]['time']:
+      gr[src_ip][dst_ip]['time'][rec.TIME_LAST.toString("%w")] = {}
+   if rec.TIME_LAST.toString("%H") not in gr[src_ip][dst_ip]['time'][rec.TIME_LAST.toString("%w")]:
+      gr[src_ip][dst_ip]['time'][rec.TIME_LAST.toString("%w")][rec.TIME_LAST.toString("%H")] = {}
 
-   if rec.TIME_LAST.toString("%M") in gr[src_ip][dst_ip]['time'][rec.TIME_LAST.toString("%a")][rec.TIME_LAST.toString("%H")]:
-      gr[src_ip][dst_ip]['time'][rec.TIME_LAST.toString("%a")][rec.TIME_LAST.toString("%H")][rec.TIME_LAST.toString("%M")] += 1
+   if rec.TIME_LAST.toString("%M") in gr[src_ip][dst_ip]['time'][rec.TIME_LAST.toString("%w")][rec.TIME_LAST.toString("%H")]:
+      gr[src_ip][dst_ip]['time'][rec.TIME_LAST.toString("%w")][rec.TIME_LAST.toString("%H")][rec.TIME_LAST.toString("%M")] += 1
    else:
-      gr[src_ip][dst_ip]['time'][rec.TIME_LAST.toString("%a")][rec.TIME_LAST.toString("%H")][rec.TIME_LAST.toString("%M")] = 1    
+      gr[src_ip][dst_ip]['time'][rec.TIME_LAST.toString("%w")][rec.TIME_LAST.toString("%H")][rec.TIME_LAST.toString("%M")] = 1    
    return gr
 
 def AddNodeTimeInfo(ip,rec,gr):
-   if rec.TIME_LAST.toString("%a") not in gr.node[ip]['time']:
-      gr.node[ip]['time'][rec.TIME_LAST.toString("%a")] = {}
-   if rec.TIME_LAST.toString("%H") not in gr.node[ip]['time'][rec.TIME_LAST.toString("%a")]:
-      gr.node[ip]['time'][rec.TIME_LAST.toString("%a")][rec.TIME_LAST.toString("%H")] = {}
-   if rec.TIME_LAST.toString("%M") in gr.node[ip]['time'][rec.TIME_LAST.toString("%a")][rec.TIME_LAST.toString("%H")]:
-      gr.node[ip]['time'][rec.TIME_LAST.toString("%a")][rec.TIME_LAST.toString("%H")][rec.TIME_LAST.toString("%M")] += 1
+   if rec.TIME_LAST.toString("%w") not in gr.node[ip]['time']:
+      gr.node[ip]['time'][rec.TIME_LAST.toString("%w")] = {}
+   if rec.TIME_LAST.toString("%H") not in gr.node[ip]['time'][rec.TIME_LAST.toString("%w")]:
+      gr.node[ip]['time'][rec.TIME_LAST.toString("%w")][rec.TIME_LAST.toString("%H")] = {}
+   if rec.TIME_LAST.toString("%M") in gr.node[ip]['time'][rec.TIME_LAST.toString("%w")][rec.TIME_LAST.toString("%H")]:
+      gr.node[ip]['time'][rec.TIME_LAST.toString("%w")][rec.TIME_LAST.toString("%H")][rec.TIME_LAST.toString("%M")] += 1
    else:
-      gr.node[ip]['time'][rec.TIME_LAST.toString("%a")][rec.TIME_LAST.toString("%H")][rec.TIME_LAST.toString("%M")] = 1    
+      gr.node[ip]['time'][rec.TIME_LAST.toString("%w")][rec.TIME_LAST.toString("%H")][rec.TIME_LAST.toString("%M")] = 1    
    return gr
 
 def AddRecord(rec, gr, properties,ip_range):
@@ -225,20 +240,21 @@ def AddRecord(rec, gr, properties,ip_range):
    src_ip = CheckIPRange(str(rec.SRC_IP),ip_range)
    dst_ip = CheckIPRange(str(rec.DST_IP),ip_range)
    
-   #print src_ip,dst_ip 
+   #604 800 s = 1 week
    if src_ip != dst_ip:
+      time_last_seen = rec.TIME_LAST.getSec()
       if gr.has_node(src_ip):
          gr.node[src_ip]['weight'] +=1
          gr.node[src_ip]['last_seen'] = rec.TIME_LAST.getSec()
          gr = AddNodeTimeInfo(src_ip,rec,gr)
       else:
-         gr.add_node(src_ip,weight = 1, last_seen = rec.TIME_LAST.getSec(), time = {rec.TIME_LAST.toString("%a") : {rec.TIME_LAST.toString("%H") : {rec.TIME_LAST.toString("%M") : 1}}})
+         gr.add_node(src_ip,weight = 1, last_seen = rec.TIME_LAST.getSec(), time = {rec.TIME_LAST.toString("%w") : {rec.TIME_LAST.toString("%H") : {rec.TIME_LAST.toString("%M") : 1}}})
       if gr.has_node(dst_ip):
          gr.node[dst_ip]['weight'] += 1
          gr.node[dst_ip]['last_seen'] = rec.TIME_LAST.getSec()
          gr = AddNodeTimeInfo(dst_ip,rec,gr)
       else:
-         gr.add_node(dst_ip,weight = 1, last_seen = rec.TIME_LAST.getSec(), time = {rec.TIME_LAST.toString("%a") : {rec.TIME_LAST.toString("%H") : {rec.TIME_LAST.toString("%M") : 1}}})
+         gr.add_node(dst_ip,weight = 1, last_seen = rec.TIME_LAST.getSec(), time = {rec.TIME_LAST.toString("%w") : {rec.TIME_LAST.toString("%H") : {rec.TIME_LAST.toString("%M") : 1}}})
 
       if gr.has_edge(src_ip,dst_ip):
          gr[src_ip][dst_ip]['weight'] += 1
@@ -249,11 +265,11 @@ def AddRecord(rec, gr, properties,ip_range):
             gr = UpdateParameters(src_ip,dst_ip,rec,properties)
          
       else:
-         gr.add_edge(src_ip,dst_ip, weight = 1, last_seen = rec.TIME_LAST.getSec(), time = {rec.TIME_LAST.toString("%a") : {rec.TIME_LAST.toString("%H") : {rec.TIME_LAST.toString("%M") : 1}}})
+         gr.add_edge(src_ip,dst_ip, weight = 1, last_seen = rec.TIME_LAST.getSec(), time = {rec.TIME_LAST.toString("%w") : {rec.TIME_LAST.toString("%H") : {rec.TIME_LAST.toString("%M") : 1}}})
          if properties is not None:
             gr = UpdateParameters(src_ip,dst_ip,rec,properties)
-   #print gr.edge[src_ip][dst_ip]['time'][rec.TIME_LAST.toString("%a")][rec.TIME_LAST.toString("%H")]
-   return gr
+   #print gr.edge[src_ip][dst_ip]['time'][rec.TIME_LAST.toString("%w")][rec.TIME_LAST.toString("%H")]
+   return gr,time_last_seen
       
 
 def RemoveOldData():
@@ -346,7 +362,6 @@ while not trap.stop:
       (fmttype, fmtspec) = trap.get_data_fmt(trap.IFC_INPUT, 0)
       UR_Flow = unirec.CreateTemplate("UR_Flow", fmtspec)
       print("Negotiation:", fmttype, fmtspec)
-      UR_Flow2 = unirec.CreateTemplate("UR_Flow2", fmtspec)
       print "Negotiation"
       # Set the same format for output IFC negotiation
       #trap.set_data_fmt(0, fmttype, fmtspec)
@@ -364,16 +379,22 @@ while not trap.stop:
    
    #print "cas", rec.TIME_LAST.toString("%Y-%m-%d %H:%M:%S")
    if incounter == 0:
+      first_timestamp = rec.TIME_LAST.getSec()
       stats_trigger = rec.TIME_LAST.getSec() - (rec.TIME_LAST.getSec()%60)  
    
 
-   gr = FlowProcess(is_learning,rec, gr, prop_array, ip_range)
+   gr,time_last_seen = FlowProcess(is_learning,rec, gr, prop_array, ip_range)
    
    incounter+=1  
 
+print is_learning
 if is_learning == True:
+   number_of_periods = int(((time_last_seen - time_last_seen%week_seconds) - (first_timestamp - first_timestamp%week_seconds)) /  week_seconds) + 1
+   print number_of_periods
+   CountAverageFlows()
    "export graph"
    ExportData(directory)
+
 #print gr.nodes()
 #print gr.edges() 
 print incounter
