@@ -181,6 +181,8 @@ def FlowProcess(UR_Flow, is_learning, gr, prop_array, ip_range):
       next_period = False
 
 
+   return gr, first_timestamp,time_last_seen
+
    """
 
    if rec.TIME_LAST.getSec() > stats_trigger - 60 and is_learning is False:
@@ -207,7 +209,7 @@ def FlowProcess(UR_Flow, is_learning, gr, prop_array, ip_range):
          rec_buffer = []
    #print "actual", gr.nodes()
    """
-   return gr, first_timestamp,time_last_seen
+   
 
 
 def StrDatetime(time_str, time_format):
@@ -313,14 +315,8 @@ def AddEdgeTimeInfo(src_ip, dst_ip, rec,gr):
    return gr
 
 def AddNodeTimeInfo(next_period,ip,rec,gr):
-   if next_period is True:
-      gr.node[ip]['time'].append(1)
-      if len(gr.node[ip]['time']) > 24*7*12*2:
-         gr.node[ip].popleft()
-   else:
-      gr.node[ip]['time'][-1] += 1
-
-   return gr
+   
+      return gr
 
 """
 
@@ -352,21 +348,30 @@ def AddRecord(rec, gr, properties,ip_range,next_period,first_timestamp):
 
    if next_period is True:
       gr.graph['flow_count'].append(1)
-      if len(gr.graph['flow_count']) > 24*7*12*2:
+      if len(gr.graph['flow_count']) > (24*7*12*2):
          gr.graph['flow_count'].popleft()
    else:
       gr.graph['flow_count'][-1] += 1
 
    if src_ip != dst_ip:
+      if next_period is True:
+         for node_id,node_attrs in gr.nodes(data=True):
+            gr.node[node_id]['time'].append(0)
+            if len(gr.node[node_id]['time']) > (24*7*12*2):
+               gr.node[node_id]['time'].popleft()
+               #print "removing",len(gr.node[node_id]['time'])
+            
       if gr.has_node(src_ip):
          gr.node[src_ip]['weight'] +=1
          gr.node[src_ip]['last_seen'] = rec.TIME_LAST.getSec()
-         gr = AddNodeTimeInfo(next_period,src_ip,rec,gr)
+         gr.node[src_ip]['time'][-1] += 1
       else:
+         print "new addr", src_ip
          gr.add_node(src_ip,weight = 1, last_seen = rec.TIME_LAST.getSec(), time = deque())
          while len(gr.node[src_ip]['time']) < len(gr.graph['flow_count']) - 1:
             gr.node[src_ip]['time'].append(0)
          gr.node[src_ip]['time'].append(1)
+
 
    return gr
 """
