@@ -112,6 +112,7 @@ def FlowProcess(UR_Flow, is_learning, gr, prop_array, ip_range):
    next_period = False
    time_last_seen = 0
    first_timestamp = 0
+   detection_seq = 0
    #print rec.TIME_LAST.getSec(), stats_trigger  
    
 
@@ -144,9 +145,8 @@ def FlowProcess(UR_Flow, is_learning, gr, prop_array, ip_range):
    
       rec = UR_Flow(data)
       if is_learning == False and incounter == 0:
-         gr_learned = ReadLearnedData(rec,)
-         gr.graph['flow_count'] = gr_learned.graph['flow_count']
-         gr.graph['last_flow'] = gr_learned.graph['last_flow']
+         gr = ReadLearnedData(rec,)
+         print gr.graph['flow_count']
          #print "cas", rec.TIME_LAST.toString("%Y-%m-%d %H:%M:%S")
 
       if incounter == 0:
@@ -159,14 +159,20 @@ def FlowProcess(UR_Flow, is_learning, gr, prop_array, ip_range):
 
 
       if rec.TIME_LAST.getSec() > stats_trigger or incounter == 1:
+         
          stats_trigger += time_window
          next_period = True
       if is_learning == False and next_period == True:
-         if len(gr.graph['flow_count']) >= 24*12*7*2 and len(res) > 0: 
-            print res[0][prediction_count], gr.graph['flow_count'][-1]
-            if gr.graph['flow_count'][-1] > res[0][prediction_count] + (res[0][prediction_count] * flow_count_deviation) or gr.graph['flow_count'][-1] < res[0][prediction_count] - (res[0][prediction_count] * flow_count_deviation) or gr.graph['flow_count'][-1] == 0:
-               logger.warning('Flow count measured: %s, predicted: %s.', gr.graph['flow_count'][-1],res[0][prediction_count])
-               gr.graph['flow_count'][-1] = gr.graph['flow_count'][-12*24*7]
+         if len(gr.graph['flow_count']) >= 24*12*7*2:
+            if len(res) > 0: 
+               print res[0][prediction_count], gr.graph['flow_count'][-1]
+               if gr.graph['flow_count'][-1] > res[0][prediction_count] + (res[0][prediction_count] * flow_count_deviation) or gr.graph['flow_count'][-1] < res[0][prediction_count] - (res[0][prediction_count] * flow_count_deviation) or gr.graph['flow_count'][-1] == 0:
+                  detection_seq += 1
+                  gr.graph['flow_count'][-1] = gr.graph['flow_count'][-12*24*7]
+                  if detection_seq == 12:
+                     logger.warning('Flow count measured: %s, predicted: %s.', gr.graph['flow_count'][-1],res[0][prediction_count])
+                     detection_seq = 0
+
 
             print prediction_count
             prediction_count += 1   
@@ -316,7 +322,18 @@ def AddEdgeTimeInfo(src_ip, dst_ip, rec,gr):
 
 def AddNodeTimeInfo(next_period,ip,rec,gr):
    
-      return gr
+   if gr.has_node(ip):
+         gr.node[ip]['weight'] +=1
+         gr.node[ip]['last_seen'] = rec.TIME_LAST.getSec()
+         gr.node[ip]['time'][-1] += 1
+   else:
+      print "new addr", ip
+      gr.add_node(ip,weight = 1, last_seen = rec.TIME_LAST.getSec(), time = deque())
+      while len(gr.node[ip]['time']) < len(gr.graph['flow_count']) - 1:
+         gr.node[ip]['time'].append(0)
+      gr.node[ip]['time'].append(1)
+
+   return gr
 
 """
 
@@ -353,26 +370,38 @@ def AddRecord(rec, gr, properties,ip_range,next_period,first_timestamp):
    else:
       gr.graph['flow_count'][-1] += 1
 
-   if src_ip != dst_ip:
-      if next_period is True:
-         for node_id,node_attrs in gr.nodes(data=True):
-            gr.node[node_id]['time'].append(0)
-            if len(gr.node[node_id]['time']) > (24*7*12*2):
-               gr.node[node_id]['time'].popleft()
-               #print "removing",len(gr.node[node_id]['time'])
-            
-      if gr.has_node(src_ip):
-         gr.node[src_ip]['weight'] +=1
-         gr.node[src_ip]['last_seen'] = rec.TIME_LAST.getSec()
-         gr.node[src_ip]['time'][-1] += 1
-      else:
-         print "new addr", src_ip
-         gr.add_node(src_ip,weight = 1, last_seen = rec.TIME_LAST.getSec(), time = deque())
-         while len(gr.node[src_ip]['time']) < len(gr.graph['flow_count']) - 1:
-            gr.node[src_ip]['time'].append(0)
-         gr.node[src_ip]['time'].append(1)
-
-
+   if next_period is True:
+      for node_id,node_attrs in gr.nodes(data=True):
+         gr.node[node_id]['time'].append(0)
+         if len(gr.node[node_id]['time']) > (24*7*12*2):
+            gr.node[node_id]['time'].popleft()
+            #print "removing",len(gr.node[node_id]['time'])
+      for src,dst,edge_attrs in gr.edges(data=True):
+         gr[src][dst]['time'].append(0)
+         if len(gr[src][dst]['time']) > (24*7*12*2):
+            gr[src][dst]['time'].popleft()
+            #print "removing",len(gr.node[node_id]['time'])
+         
+   gr = AddNodeTimeInfo(next_period,src_ip,rec,gr)
+   gr = AddNodeTimeInfo(next_period,dst_ip,rec,gr)
+   
+   if gr.has_edge(src_ip,dst_ip):
+      gr[src_ip][dst_ip]['weight'] += 1
+      gr[src_ip][dst_ip]['last_seen'] = rec.TIME_LAST.getSec()
+      gr.edge[src_ip][dst_ip]['time'][-1] += 1
+      
+      if properties is not None:
+         gr = UpdateParameters(src_ip,dst_ip,rec,properties)
+      
+   else:
+      print "new edge", src_ip,dst_ip
+      gr.add_edge(src_ip,dst_ip,weight = 1, last_seen = rec.TIME_LAST.getSec(), time = deque())
+      while len(gr.edge[src_ip][dst_ip]['time']) < len(gr.graph['flow_count']) - 1:
+         gr[src_ip][dst_ip]['time'].append(0)
+      gr[src_ip][dst_ip]['time'].append(1)
+      if properties is not None:
+         gr = UpdateParameters(src_ip,dst_ip,rec,properties)
+   
    return gr
 """
       if gr.has_node(dst_ip):
@@ -460,6 +489,8 @@ def ExportData(directory = "data"):
    gr.graph['flow_count'] = list(gr.graph['flow_count'])
    for node_id,node_attrs in gr.nodes(data=True):
       gr.node[node_id]['time'] = list(node_attrs['time'])
+   for src,dst,edge_attrs in gr.edges(data=True):
+      gr[src][dst]['time'] = list(edge_attrs['time'])
    if not os.path.exists(directory):
       os.makedirs(directory)
    with open(str(directory)+"/learned.json", 'w') as outfile1:
@@ -475,8 +506,10 @@ def ReadLearnedData(rec,directory = "data"):
       data = json.loads(infile1.read())
    graph = json_graph.node_link_graph(data, directed=True, multigraph=False, attrs={'id':'id', 'source': 'source', 'target': 'target', 'last_seen': 'last_seen', 'time': 'time', 'weight':'weight'})
    #print graph['254.158.184.235']['106.53.240.142']['time']
-   for node_id,node_attrs in gr.nodes(data=True):
-      gr.node[node_id]['time'] = deque(node_attrs['time'])
+   for src,dst,edge_attrs in graph.edges(data=True):
+      graph[src][dst]['time'] = deque(edge_attrs['time'])
+   for node_id,node_attrs in graph.nodes(data=True):
+      graph.node[node_id]['time'] = deque(node_attrs['time'])
    print graph.graph['last_flow'], rec.TIME_LAST.getSec()
    loaded_interval_index = (graph.graph['last_flow']/60*5)%(7*24*12*2)
    actual_interval_index = (rec.TIME_LAST.getSec()/60*5)%(7*24*12*2)
@@ -484,7 +517,10 @@ def ReadLearnedData(rec,directory = "data"):
    graph.graph['flow_count'] = deque(graph.graph['flow_count'])
    print graph.graph['flow_count'][0]
    graph.graph['flow_count'].rotate(actual_interval_index - loaded_interval_index)
-   
+   for node_id, node_attrs in graph.nodes(data=True):
+      graph.node[node_id]['time'].rotate(actual_interval_index - loaded_interval_index)
+   for src,dst,edge_attrs in graph.edges(data=True):
+      graph[src][dst]['time'].rotate(actual_interval_index - loaded_interval_index)
    return graph      
 
 
