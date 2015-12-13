@@ -41,7 +41,6 @@ is_learning = False
 minute_accuracy = 3
 week_seconds = 604800
 number_of_periods = 1
-prediction_intervals = 12
 flow_count_deviation = 0.5
 
 logger = logging.getLogger(__name__)
@@ -105,14 +104,15 @@ def PartialPeriodFlows():
 
 def FlowProcess(UR_Flow, is_learning, gr, prop_array, ip_range):
    stats_trigger = 0
-   rec_buffer
-   prediction_count = 0
+   rec_buffer = []
+   prediction_intervals = prediction_count = 12
    res = []
    incounter = 0
    next_period = False
    time_last_seen = 0
    first_timestamp = 0
    detection_seq = 0
+   num_blocks_report = 12
    #print rec.TIME_LAST.getSec(), stats_trigger  
    
 
@@ -151,7 +151,7 @@ def FlowProcess(UR_Flow, is_learning, gr, prop_array, ip_range):
 
       if incounter == 0:
          first_timestamp = rec.TIME_LAST.getSec()
-         stats_trigger = rec.TIME_LAST.getSec() - (rec.TIME_LAST.getSec()%60)  
+         stats_trigger = rec.TIME_LAST.getSec() - (rec.TIME_LAST.getSec()%60)  + (10*60)
 
       time_last_seen = rec.TIME_LAST.getSec()
       incounter+=1  
@@ -159,8 +159,6 @@ def FlowProcess(UR_Flow, is_learning, gr, prop_array, ip_range):
 
 
       if rec.TIME_LAST.getSec() > stats_trigger or incounter == 1:
-         
-         stats_trigger += time_window
          next_period = True
       if is_learning == False and next_period == True:
          if len(gr.graph['flow_count']) >= 24*12*7*2:
@@ -169,23 +167,36 @@ def FlowProcess(UR_Flow, is_learning, gr, prop_array, ip_range):
                if gr.graph['flow_count'][-1] > res[0][prediction_count] + (res[0][prediction_count] * flow_count_deviation) or gr.graph['flow_count'][-1] < res[0][prediction_count] - (res[0][prediction_count] * flow_count_deviation) or gr.graph['flow_count'][-1] == 0:
                   detection_seq += 1
                   gr.graph['flow_count'][-1] = gr.graph['flow_count'][-12*24*7]
-                  if detection_seq == 12:
+                  if detection_seq == num_blocks_report:
                      logger.warning('Flow count measured: %s, predicted: %s.', gr.graph['flow_count'][-1],res[0][prediction_count])
                      detection_seq = 0
 
 
-            print prediction_count
-            prediction_count += 1   
-            if prediction_count == prediction_intervals:
+            print prediction_count   
+            if prediction_count >= prediction_intervals:
                prediction_count = 0
                res = hwt.HWT(list(gr.graph['flow_count']), 24*12, 24*12*7, 12, alpha = None,  gamma = None,delta=None, initial_values_optimization=[0.1, 0.2, 0.2])
-         
-      
-      gr = AddRecord(rec, gr, prop_array, ip_range,next_period,first_timestamp)
+            prediction_count += 1
+            
+      if rec.TIME_LAST.getSec() > stats_trigger:
+         stats_trigger += time_window
+         print "high"
+         for record in rec_buffer:
+            gr = AddRecord(record, gr, prop_array, ip_range,next_period,first_timestamp)
+            next_period = False
+         rec_buffer = []
+         rec_buffer.append(rec)
+      elif rec.TIME_LAST.getSec() > stats_trigger - (5*60):
+         rec_buffer.append(rec)
+         print "mid"
+      elif rec.TIME_LAST.getSec() <= stats_trigger - (5*60):
+         print "low"
+         gr = AddRecord(rec, gr, prop_array, ip_range,next_period,first_timestamp)
+         next_period = False
       #print len (list(gr.graph['flow_count']))
       #print list(gr.graph['flow_count'][0:-1])
-      next_period = False
-
+      
+      time.sleep(0.05)
 
    return gr, first_timestamp,time_last_seen
 
@@ -204,7 +215,6 @@ def FlowProcess(UR_Flow, is_learning, gr, prop_array, ip_range):
    #print type(is_learning), is_learning
    if is_learning is False: 
       if rec.TIME_LAST.getSec() > stats_trigger:
-         StructureDataProcess()
          TimeStructureDataProcess(stats_trigger)
 
          stats_trigger += time_window
@@ -278,11 +288,6 @@ def TimeStructureDataProcess(stats_trigger):
          logger.warning('New node %s',node_id)
                      
 
-def StructureDataProcess():
-   edges_removed =set()
-   addresses_removed = set()
-
-
 
 def UpdateParameters(src_ip,dst_ip,rec,properties):
    for p in properties:
@@ -308,16 +313,23 @@ def CheckIPRange(ip,ip_range):
    return ip
 
 
-def AddEdgeTimeInfo(src_ip, dst_ip, rec,gr):
-   if rec.TIME_LAST.toString("%w") not in gr[src_ip][dst_ip]['time']:
-      gr[src_ip][dst_ip]['time'][rec.TIME_LAST.toString("%w")] = {}
-   if rec.TIME_LAST.toString("%H") not in gr[src_ip][dst_ip]['time'][rec.TIME_LAST.toString("%w")]:
-      gr[src_ip][dst_ip]['time'][rec.TIME_LAST.toString("%w")][rec.TIME_LAST.toString("%H")] = {}
-
-   if rec.TIME_LAST.toString("%M") in gr[src_ip][dst_ip]['time'][rec.TIME_LAST.toString("%w")][rec.TIME_LAST.toString("%H")]:
-      gr[src_ip][dst_ip]['time'][rec.TIME_LAST.toString("%w")][rec.TIME_LAST.toString("%H")][rec.TIME_LAST.toString("%M")] += 1
+def AddEdgeTimeInfo(next_period,src_ip, dst_ip, rec,gr,properties):
+   if gr.has_edge(src_ip,dst_ip):
+      gr[src_ip][dst_ip]['weight'] += 1
+      gr[src_ip][dst_ip]['last_seen'] = rec.TIME_LAST.getSec()
+      gr.edge[src_ip][dst_ip]['time'][-1] += 1
+      
+      if properties is not None:
+         gr = UpdateParameters(src_ip,dst_ip,rec,properties)
+      
    else:
-      gr[src_ip][dst_ip]['time'][rec.TIME_LAST.toString("%w")][rec.TIME_LAST.toString("%H")][rec.TIME_LAST.toString("%M")] = 1    
+      print "new edge", src_ip,dst_ip
+      gr.add_edge(src_ip,dst_ip,weight = 1, last_seen = rec.TIME_LAST.getSec(), time = deque())
+      while len(gr.edge[src_ip][dst_ip]['time']) < len(gr.graph['flow_count']) - 1:
+         gr[src_ip][dst_ip]['time'].append(0)
+      gr[src_ip][dst_ip]['time'].append(1)
+      if properties is not None:
+         gr = UpdateParameters(src_ip,dst_ip,rec,properties)
    return gr
 
 def AddNodeTimeInfo(next_period,ip,rec,gr):
@@ -384,23 +396,8 @@ def AddRecord(rec, gr, properties,ip_range,next_period,first_timestamp):
          
    gr = AddNodeTimeInfo(next_period,src_ip,rec,gr)
    gr = AddNodeTimeInfo(next_period,dst_ip,rec,gr)
+   gr = AddEdgeTimeInfo(next_period,src_ip, dst_ip, rec,gr,properties)
    
-   if gr.has_edge(src_ip,dst_ip):
-      gr[src_ip][dst_ip]['weight'] += 1
-      gr[src_ip][dst_ip]['last_seen'] = rec.TIME_LAST.getSec()
-      gr.edge[src_ip][dst_ip]['time'][-1] += 1
-      
-      if properties is not None:
-         gr = UpdateParameters(src_ip,dst_ip,rec,properties)
-      
-   else:
-      print "new edge", src_ip,dst_ip
-      gr.add_edge(src_ip,dst_ip,weight = 1, last_seen = rec.TIME_LAST.getSec(), time = deque())
-      while len(gr.edge[src_ip][dst_ip]['time']) < len(gr.graph['flow_count']) - 1:
-         gr[src_ip][dst_ip]['time'].append(0)
-      gr[src_ip][dst_ip]['time'].append(1)
-      if properties is not None:
-         gr = UpdateParameters(src_ip,dst_ip,rec,properties)
    
    return gr
 """
