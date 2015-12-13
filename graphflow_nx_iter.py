@@ -44,8 +44,6 @@ number_of_periods = 1
 flow_count_deviation = 0.5
 
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
-
 handler = logging.FileHandler('graphflow.log'+str(datetime.datetime.now()))
 handler.setLevel(logging.INFO)
 formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
@@ -105,14 +103,14 @@ def PartialPeriodFlows():
 def FlowProcess(UR_Flow, is_learning, gr, prop_array, ip_range):
    stats_trigger = 0
    rec_buffer = []
-   prediction_intervals = prediction_count = 12
+   prediction_intervals = prediction_count = 1
    res = []
    incounter = 0
    next_period = False
    time_last_seen = 0
    first_timestamp = 0
    detection_seq = 0
-   num_blocks_report = 12
+   num_blocks_report = 6
    #print rec.TIME_LAST.getSec(), stats_trigger  
    
 
@@ -146,7 +144,7 @@ def FlowProcess(UR_Flow, is_learning, gr, prop_array, ip_range):
       rec = UR_Flow(data)
       if is_learning == False and incounter == 0:
          gr = ReadLearnedData(rec,)
-         print gr.graph['flow_count']
+         
          #print "cas", rec.TIME_LAST.toString("%Y-%m-%d %H:%M:%S")
 
       if incounter == 0:
@@ -158,46 +156,51 @@ def FlowProcess(UR_Flow, is_learning, gr, prop_array, ip_range):
 
 
 
+
       if rec.TIME_LAST.getSec() > stats_trigger or incounter == 1:
          next_period = True
       if is_learning == False and next_period == True:
          if len(gr.graph['flow_count']) >= 24*12*7*2:
             if len(res) > 0: 
                print res[0][prediction_count], gr.graph['flow_count'][-1]
-               if gr.graph['flow_count'][-1] > res[0][prediction_count] + (res[0][prediction_count] * flow_count_deviation) or gr.graph['flow_count'][-1] < res[0][prediction_count] - (res[0][prediction_count] * flow_count_deviation) or gr.graph['flow_count'][-1] == 0:
+               if gr.graph['flow_count'][-1] > res[0][prediction_count] + (res[0][prediction_count] * flow_count_deviation) or gr.graph['flow_count'][-1] < res[0][prediction_count] - (res[0][prediction_count] * flow_count_deviation):
                   detection_seq += 1
                   gr.graph['flow_count'][-1] = gr.graph['flow_count'][-12*24*7]
                   if detection_seq == num_blocks_report:
-                     logger.warning('Flow count measured: %s, predicted: %s.', gr.graph['flow_count'][-1],res[0][prediction_count])
+                     logger.warning('Flow count measured: %s, predicted: %s during 1 hour before %s', gr.graph['flow_count'][-1],res[0][prediction_count],time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(gr.graph['last_flow'])))
                      detection_seq = 0
+               else:
+                  detection_seq = 0
+               prediction_count += 1
 
-
-            print prediction_count   
+            
             if prediction_count >= prediction_intervals:
                prediction_count = 0
                res = hwt.HWT(list(gr.graph['flow_count']), 24*12, 24*12*7, 12, alpha = None,  gamma = None,delta=None, initial_values_optimization=[0.1, 0.2, 0.2])
-            prediction_count += 1
             
+
       if rec.TIME_LAST.getSec() > stats_trigger:
          stats_trigger += time_window
-         print "high"
+         #print "high"
          for record in rec_buffer:
             gr = AddRecord(record, gr, prop_array, ip_range,next_period,first_timestamp)
             next_period = False
          rec_buffer = []
          rec_buffer.append(rec)
-      elif rec.TIME_LAST.getSec() > stats_trigger - (5*60):
+      elif rec.TIME_LAST.getSec() > stats_trigger - time_window:
          rec_buffer.append(rec)
-         print "mid"
-      elif rec.TIME_LAST.getSec() <= stats_trigger - (5*60):
-         print "low"
+         #print "mid"
+      elif rec.TIME_LAST.getSec() <= stats_trigger - time_window:
+         #print "low"
          gr = AddRecord(rec, gr, prop_array, ip_range,next_period,first_timestamp)
          next_period = False
       #print len (list(gr.graph['flow_count']))
       #print list(gr.graph['flow_count'][0:-1])
       
-      time.sleep(0.05)
-
+      #time.sleep(0.05)
+   #for record in rec_buffer:
+   #   gr = AddRecord(record, gr, prop_array, ip_range,next_period,first_timestamp)
+   #   next_period = False
    return gr, first_timestamp,time_last_seen
 
    """
@@ -371,8 +374,8 @@ def AddRecord(rec, gr, properties,ip_range,next_period,first_timestamp):
    if 'last_flow' not in gr.graph:
       gr.graph['last_flow'] = 0
    
-   if rec.TIME_LAST.getSec() > gr.graph['last_flow']:
-      gr.graph['last_flow'] = rec.TIME_LAST.getSec()
+   #if rec.TIME_LAST.getSec() > gr.graph['last_flow']:
+   gr.graph['last_flow'] = rec.TIME_LAST.getSec()
       #print gr.graph['last_flow']
 
    if next_period is True:
@@ -508,16 +511,17 @@ def ReadLearnedData(rec,directory = "data"):
    for node_id,node_attrs in graph.nodes(data=True):
       graph.node[node_id]['time'] = deque(node_attrs['time'])
    print graph.graph['last_flow'], rec.TIME_LAST.getSec()
-   loaded_interval_index = (graph.graph['last_flow']/60*5)%(7*24*12*2)
-   actual_interval_index = (rec.TIME_LAST.getSec()/60*5)%(7*24*12*2)
+   loaded_interval_index = (graph.graph['last_flow']/(60*5))%(7*24*12)
+   actual_interval_index = (rec.TIME_LAST.getSec()/(60*5))%(7*24*12)
    #print graph.graph['flow_count'][-1]
    graph.graph['flow_count'] = deque(graph.graph['flow_count'])
-   print graph.graph['flow_count'][0]
+   print actual_interval_index - loaded_interval_index
    graph.graph['flow_count'].rotate(actual_interval_index - loaded_interval_index)
    for node_id, node_attrs in graph.nodes(data=True):
       graph.node[node_id]['time'].rotate(actual_interval_index - loaded_interval_index)
    for src,dst,edge_attrs in graph.edges(data=True):
       graph[src][dst]['time'].rotate(actual_interval_index - loaded_interval_index)
+   print "kontrola rotace",loaded_interval_index,actual_interval_index
    return graph      
 
 
