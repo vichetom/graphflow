@@ -186,7 +186,7 @@ def FlowProcess(UR_Flow, is_learning, gr, prop_array, ip_range):
                gr.graph['prediction_count'] += 1
 
          for node_id in gr.nodes():
-            if len(gr.node[node_id]['time']) >= 24*12*7*2:
+            if len(gr.node[node_id]['time']) >= (24*12*7*2):
                if len(gr.node[node_id]['hwt_addr']) > 0 and gr.node[node_id]['permanent_addr'] == True:
                   prediction_count = gr.node[node_id]['prediction_count']
                   print "Addr prediction:",node_id,gr.node[node_id]['hwt_addr'][0][prediction_count], gr.node[node_id]['time'][-1]
@@ -199,44 +199,66 @@ def FlowProcess(UR_Flow, is_learning, gr, prop_array, ip_range):
                   else:
                      gr.node[node_id]['detection_seq'] = 0
                   gr.node[node_id]['prediction_count'] += 1
-
+            if gr.node[node_id]['time'][-1] == 0:
+               if gr.node[node_id]['time'][-2] != 0 and gr.node[node_id]['permanent_addr'] == False:
+                  logger.info('IP address: %s disconnected in time: %s', node_id, time.strftime('%Y-%m-%d %H:%M', time.gmtime(gr.node[node_id]['last_seen'])))
+               elif gr.node[node_id]['permanent_addr'] == True:
+                  gr.node[node_id]['permanent_addr'] = False
+                  logger.warning('Permanent address: %s disconnected in time: %s - %s', node_id, time.strftime('%Y-%m-%d %H:%M', time.gmtime(gr.node[node_id]['last_seen']-300)),time.strftime('%Y-%m-%d %H:%M', time.gmtime(gr.node[node_id]['last_seen'])))
+            if not 0 in gr.node[node_id]['time'] and gr.node[node_id]['permanent_addr'] == False:
+               gr.node[node_id]['permanent_addr'] = True
+               gr.node[node_id]['prediction_count'] = prediction_intervals
+               gr.node[node_id]['hwt_addr'] = []
+               logger.warning('New permanent address: %s in last 2 weeks before:%s', node_id, time.strftime('%Y-%m-%d %H:%M', time.gmtime(gr.node[node_id]['last_seen'])))
 
             if gr.node[node_id]['prediction_count'] >= prediction_intervals:
                gr.node[node_id]['hwt_addr'] = []
                gr.node[node_id]['prediction_count'] = 0
                if gr.node[node_id]['permanent_addr'] == True: 
                   gr.node[node_id]['hwt_addr'] = hwt.HWT(list(gr.node[node_id]['time']), 24*12, 24*12*7, prediction_intervals, alpha = None,  gamma = None,delta=None, initial_values_optimization=[0.1, 0.2, 0.2])
-#TODO - rozliseni mezi prihlasenim a odhlasenim poprve a opakovanym (info vs debug), mozna presunout z addrecordu, prihlaseni se aktualne v addrecordu sleduje jen poprve ale odhlaseni zde kazde, bug - neobnovi se permanent, potoze spada do prvniho pripadu
-         for node_id,node_attrs in gr.nodes(data=True):
-            if gr.node[node_id]['time'][-1] == 0:
-               if gr.node[node_id]['time'][-2] != 0 and gr.node[node_id]['permanent_addr'] == False:
-                  logger.info('IP address: %s disconnected in time: %s', node_id, time.strftime('%Y-%m-%d %H:%M', time.gmtime(node_attrs['last_seen'])))
-               elif gr.node[node_id]['permanent_addr'] == True:
-                  gr.node[node_id]['permanent_addr'] = False
-                  logger.warning('Permanent address: %s disconnected in time: %s - %s', node_id, time.strftime('%Y-%m-%d %H:%M', time.gmtime(node_attrs['last_seen']-300)),time.strftime('%Y-%m-%d %H:%M', time.gmtime(node_attrs['last_seen'])))
-               if not 0 in gr.node[node_id]['time'] and gr.node[node_id]['permanent_addr'] == False:
-                  gr.node[node_id]['permanent_addr'] = True
-                  logger.warning('New permanent address: %s in last 2 weeks before:%s', node_id, time.strftime('%Y-%m-%d %H:%M', time.gmtime(node_attrs['last_seen'])))
-            gr.node[node_id]['time'].append(0)
-            if len(gr.node[node_id]['time']) > (24*7*12*2):
-               gr.node[node_id]['time'].popleft()
-               #print "removing",len(gr.node[node_id]['time'])
-         for src,dst,edge_attrs in gr.edges(data=True):
+
+
+
+
+         for src,dst in gr.edges():
+            if len(gr[src][dst]['time']) >= (24*12*7*2):
+               if len(gr[src][dst]['hwt_edge']) > 0 and gr[src][dst]['permanent_edge'] == True:
+                  prediction_count = gr[src][dst]['prediction_count']
+                  print "Edge prediction:",src,dst,gr[src][dst]['hwt_edge'][0][prediction_count], gr[src][dst]['time'][-1]
+                  if gr[src][dst]['time'][-1] > gr[src][dst]['hwt_edge'][0][prediction_count] + (gr[src][dst]['hwt_edge'][0][prediction_count] * flow_count_deviation) or gr[src][dst]['time'][-1] < gr[src][dst]['hwt_edge'][0][prediction_count] - (gr[src][dst]['hwt_edge'][0][prediction_count] * flow_count_deviation):
+                     gr[src][dst]['detection_seq'] += 1
+                     #gr.node[node_id]['time'][-1] = gr.node[node_id]['time'][-12*24*7]
+                     if gr[src][dst]['detection_seq'] == num_blocks_report:
+                        logger.warning('Edge from %s to %s count measured: %s, predicted: %s during %s minutes before %s', src,dst,gr[src][dst]['time'][-1],gr[src][dst]['hwt_edge'][0][prediction_count],num_blocks_report*5,time.strftime('%Y-%m-%d %H:%M', time.gmtime(gr[src][dst]['last_seen'])))
+                        gr[src][dst]['detection_seq'] = 0
+                  else:
+                     gr[src][dst]['detection_seq'] = 0
+                  gr[src][dst]['prediction_count'] += 1
             if gr[src][dst]['time'][-1] == 0:  
                if gr[src][dst]['time'][-2] != 0 and gr[src][dst]['permanent_edge'] == False:
-                  logger.info('Connection from: %s to: %s disconnected in time: %s', src,dst, time.strftime('%Y-%m-%d %H:%M', time.gmtime(edge_attrs['last_seen'])))
+                  logger.info('Connection from: %s to: %s disconnected in time: %s', src,dst, time.strftime('%Y-%m-%d %H:%M', time.gmtime(gr[src][dst]['last_seen'])))
                elif gr[src][dst]['permanent_edge'] == True:
                   gr[src][dst]['permanent_edge'] = False
                   print gr.node[src]['permanent_addr'],gr.node[dst]['permanent_addr']
-                  logger.warning('Permanent connection from: %s to: %s disconnected in time: %s - %s', src,dst, time.strftime('%Y-%m-%d %H:%M', time.gmtime(edge_attrs['last_seen']-300)),time.strftime('%Y-%m-%d %H:%M', time.gmtime(edge_attrs['last_seen'])))
-               if not 0 in gr[src][dst]['time'] and gr[src][dst]['permanent_edge'] == False:
-                  gr[src][dst]['permanent_edge'] = True
-                  logger.warning('New permanent connection from: %s to: %s in las 2 weeks before: %s', src,dst, time.strftime('%Y-%m-%d %H:%M', time.gmtime(edge_attrs['last_seen'])))
-            gr[src][dst]['time'].append(0)
-            if len(gr[src][dst]['time']) > (24*7*12*2):
-               gr[src][dst]['time'].popleft()
-               #print "removing",len(gr.node[node_id]['time'])
+                  logger.warning('Permanent connection from: %s to: %s disconnected in time: %s - %s', src,dst, time.strftime('%Y-%m-%d %H:%M', time.gmtime(gr[src][dst]['last_seen']-300)),time.strftime('%Y-%m-%d %H:%M', time.gmtime(gr[src][dst]['last_seen'])))
+            if not 0 in gr[src][dst]['time'] and gr[src][dst]['permanent_edge'] == False:
+               gr[src][dst]['permanent_edge'] = True
+               gr[src][dst]['prediction_count'] = prediction_intervals
+               gr[src][dst]['hwt_edge'] = []
+               logger.warning('New permanent connection from: %s to: %s in las 2 weeks before: %s', src,dst, time.strftime('%Y-%m-%d %H:%M', time.gmtime(gr[src][dst]['last_seen'])))
+            if gr[src][dst]['prediction_count'] >= prediction_intervals:
+               gr[src][dst]['hwt_edge'] = []
+               gr[src][dst]['prediction_count'] = 0
+               if gr[src][dst]['permanent_edge'] == True: 
+                  gr[src][dst]['hwt_edge'] = hwt.HWT(list(gr[src][dst]['time']), 24*12, 24*12*7, prediction_intervals, alpha = None,  gamma = None,delta=None, initial_values_optimization=[0.1, 0.2, 0.2])
 
+
+
+            
+
+
+            
+#TODO - rozliseni mezi prihlasenim a odhlasenim poprve a opakovanym (info vs debug), mozna presunout z addrecordu, prihlaseni se aktualne v addrecordu sleduje jen poprve ale odhlaseni zde kazde, bug - neobnovi se permanent, potoze spada do prvniho pripadu
 
             
          if gr.graph['prediction_count'] >= prediction_intervals:
@@ -368,7 +390,7 @@ def AddEdgeTimeInfo(next_period,src_ip, dst_ip, rec,gr,properties,is_learning):
    if gr.has_edge(src_ip,dst_ip):
       gr[src_ip][dst_ip]['weight'] += 1
       gr[src_ip][dst_ip]['last_seen'] = rec.TIME_LAST.getSec()
-      gr.edge[src_ip][dst_ip]['time'][-1] += 1
+      gr[src_ip][dst_ip]['time'][-1] += 1
       
       if properties is not None:
          gr = UpdateParameters(src_ip,dst_ip,rec,properties)
@@ -377,7 +399,7 @@ def AddEdgeTimeInfo(next_period,src_ip, dst_ip, rec,gr,properties,is_learning):
       if is_learning == False:
          logger.info('New connection from: %s to: %s in time: %s', src_ip,dst_ip, time.strftime('%Y-%m-%d %H:%M', time.gmtime(rec.TIME_LAST.getSec())))
       gr.add_edge(src_ip,dst_ip,weight = 1,permanent_edge = False, detection_seq = 0, prediction_count = prediction_intervals,hwt_edge = [], last_seen = rec.TIME_LAST.getSec(), time = deque())
-      while len(gr.edge[src_ip][dst_ip]['time']) < len(gr.graph['flow_count']) - 1:
+      while len(gr[src_ip][dst_ip]['time']) < len(gr.graph['flow_count']) - 1:
          gr[src_ip][dst_ip]['time'].append(0)
       gr[src_ip][dst_ip]['time'].append(1)
       if properties is not None:
@@ -431,7 +453,15 @@ def AddRecord(rec, gr, properties,ip_range,next_period,first_timestamp,is_learni
    else:
       gr.graph['flow_count'][-1] += 1
 
-
+   if next_period == True:
+      for node_id in gr.nodes():
+         gr.node[node_id]['time'].append(0)
+         if len(gr.node[node_id]['time']) > (24*7*12*2):
+            gr.node[node_id]['time'].popleft()
+      for src,dst in gr.edges():
+         gr[src][dst]['time'].append(0)
+         if len(gr[src][dst]['time']) > (24*7*12*2):
+            gr[src][dst]['time'].popleft()
          
    gr = AddNodeTimeInfo(next_period,src_ip,rec,gr,is_learning)
    gr = AddNodeTimeInfo(next_period,dst_ip,rec,gr,is_learning)
