@@ -214,7 +214,7 @@ def FlowProcess(UR_Flow, is_learning, gr, prop_array, ip_range):
                elif gr.node[node_id]['permanent_addr'] == True:
                   gr.node[node_id]['permanent_addr'] = False
                   logger.warning('Permanent address: %s disconnected in time: %s - %s', node_id, time.strftime('%Y-%m-%d %H:%M', time.gmtime(node_attrs['last_seen']-300)),time.strftime('%Y-%m-%d %H:%M', time.gmtime(node_attrs['last_seen'])))
-               elif not 0 in gr.node[node_id]['time'] and gr.node[node_id]['permanent_addr'] == False:
+               if not 0 in gr.node[node_id]['time'] and gr.node[node_id]['permanent_addr'] == False:
                   gr.node[node_id]['permanent_addr'] = True
                   logger.warning('New permanent address: %s in last 2 weeks before:%s', node_id, time.strftime('%Y-%m-%d %H:%M', time.gmtime(node_attrs['last_seen'])))
             gr.node[node_id]['time'].append(0)
@@ -229,7 +229,7 @@ def FlowProcess(UR_Flow, is_learning, gr, prop_array, ip_range):
                   gr[src][dst]['permanent_edge'] = False
                   print gr.node[src]['permanent_addr'],gr.node[dst]['permanent_addr']
                   logger.warning('Permanent connection from: %s to: %s disconnected in time: %s - %s', src,dst, time.strftime('%Y-%m-%d %H:%M', time.gmtime(edge_attrs['last_seen']-300)),time.strftime('%Y-%m-%d %H:%M', time.gmtime(edge_attrs['last_seen'])))
-               elif not 0 in gr[src][dst]['time'] and gr[src][dst]['permanent_edge'] == False:
+               if not 0 in gr[src][dst]['time'] and gr[src][dst]['permanent_edge'] == False:
                   gr[src][dst]['permanent_edge'] = True
                   logger.warning('New permanent connection from: %s to: %s in las 2 weeks before: %s', src,dst, time.strftime('%Y-%m-%d %H:%M', time.gmtime(edge_attrs['last_seen'])))
             gr[src][dst]['time'].append(0)
@@ -276,34 +276,6 @@ def FlowProcess(UR_Flow, is_learning, gr, prop_array, ip_range):
 
    #if is_learning == False and next_period == True:
    #   TimeStructureDataProcess()
-
-
-   """
-
-   if rec.TIME_LAST.getSec() > stats_trigger - 60 and is_learning is False:
-      rec_buffer.append(rec)
-   else:
-      gr, flow_count_index = AddRecord(rec, gr, prop_array, ip_range)
-      print flow_count_index
-      if (flow_count_index == 0 or flow_count_index > flow_count_index_last) and len(gr.graph['flow_count']) >= 24*7*12 and first_period == False:         
-         res = hwt.HWT(gr.graph['flow_count'][:-1], 24*12, 24*12*7, 1,alpha = None, beta = None, gamma = None,delta=None, initial_values_optimization=[0.1, 0.1, 0.2, 0.2])
-         print res[0], gr.graph['flow_count'][-1]
-         flow_count_index_last = flow_count_index
-      #if len(gr.graph['flow_count']) >= 24*7*12
-   #print type(is_learning), is_learning
-   if is_learning is False: 
-      if rec.TIME_LAST.getSec() > stats_trigger:
-         TimeStructureDataProcess(stats_trigger)
-
-         stats_trigger += time_window
-         gr.clear()
-         print "cleared"
-         for record in rec_buffer:
-            gr = AddRecord(record, gr, prop_array, ip_range)
-         rec_buffer = []
-   #print "actual", gr.nodes()
-   """
-   
 
 
 def StrDatetime(time_str, time_format):
