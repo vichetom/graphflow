@@ -49,7 +49,7 @@ handler = logging.FileHandler('graphflow.log'+str(datetime.datetime.now()))
 formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
 handler.setFormatter(formatter)
 logger.addHandler(handler)
-logging.getLogger().setLevel(logging.DEBUG)
+logging.getLogger().setLevel(logging.ERROR)
 
 # How to add options of module
 from optparse import OptionParser
@@ -104,10 +104,10 @@ def PartialPeriodFlows():
 def FlowProcess(UR_Flow, is_learning, gr, prop_array, ip_range):
    global prediction_intervals
 
-
+   saved = False
    stats_trigger = 0
    rec_buffer = []
-   prediction_intervals = prediction_count = 12
+   prediction_intervals = prediction_count  = 12*24
    hwt_flow_count = []
    incounter = 0
    next_period = False
@@ -116,6 +116,7 @@ def FlowProcess(UR_Flow, is_learning, gr, prop_array, ip_range):
    detection_seq = 0
    num_blocks_report = 6
    perm_addresses = []
+   hwt_deviation = 0
    #print rec.TIME_LAST.getSec(), stats_trigger  
    
    
@@ -150,46 +151,63 @@ def FlowProcess(UR_Flow, is_learning, gr, prop_array, ip_range):
       rec = UR_Flow(data)
       if is_learning == False and incounter == 0:
          gr = ReadLearnedData(rec,)
+         gr.graph['prediction_count'] = prediction_intervals
+         for node_id in gr.nodes():
+            gr.node[node_id]['prediction_count'] = prediction_intervals
+         for src,dst in gr.edges():
+            gr[src][dst]['prediction_count'] = prediction_intervals
+         hwt_deviation = sum(gr.graph['flow_count'])/float(len(gr.graph['flow_count']))
+         print hwt_deviation
          if is_learning == False:
             for node,node_attrs in gr.nodes(data=True):
                print node,node_attrs['permanent_addr']
             for src,dst,edge_attrs in gr.edges(data=True):
                print src,dst,edge_attrs['permanent_edge']
 
-         
-         #print "cas", rec.TIME_LAST.toString("%Y-%m-%d %H:%M:%S")
-
+        
+      #print "test",gr.graph['prediction_count']
       if incounter == 0:
          first_timestamp = rec.TIME_LAST.getSec()
          stats_trigger = rec.TIME_LAST.getSec() - (rec.TIME_LAST.getSec()%60)  + (10*60)
 
       time_last_seen = rec.TIME_LAST.getSec()
       incounter+=1  
-      
+
+
+
+      #todo, prepisuje nastaveni protoze je v souboru      
+      #gr.graph['prediction_count'] = 24
+
+
 #TODO, zpracovani cele hwt do funkce, prediction_count a detection seq presunout pro kazdou analyzovanou vec zvlast - muze zacit v ruznou chvili
 #TODO predelat cisla flows u logovani
-      if rec.TIME_LAST.getSec() > stats_trigger or incounter == 1:
+      if rec.TIME_LAST.getSec() > stats_trigger:
          next_period = True
       if is_learning == False and next_period == True:
          if len(gr.graph['flow_count']) >= 24*12*7*2:
-            if len(hwt_flow_count) > 0: 
+            if len(hwt_flow_count) > 0:
+               print  prediction_count
+               print len(hwt_flow_count[0])
                prediction_count = gr.graph['prediction_count']
-               print hwt_flow_count[0][prediction_count], gr.graph['flow_count'][-1]
-               if gr.graph['flow_count'][-1] > hwt_flow_count[0][prediction_count] + (hwt_flow_count[0][prediction_count] * flow_count_deviation) or gr.graph['flow_count'][-1] < hwt_flow_count[0][prediction_count] - (hwt_flow_count[0][prediction_count] * flow_count_deviation):
+               print hwt_flow_count[0][prediction_count], gr.graph['flow_count'][-1],time.strftime('%Y-%m-%d %H:%M', time.gmtime(gr.graph['last_flow'])) 
+               if (gr.graph['flow_count'][-1] > hwt_flow_count[0][prediction_count] + (hwt_flow_count[0][prediction_count] * flow_count_deviation) or gr.graph['flow_count'][-1] < hwt_flow_count[0][prediction_count] - (hwt_flow_count[0][prediction_count] * flow_count_deviation)) and not abs(gr.graph['flow_count'][-1] - hwt_flow_count[0][prediction_count]) < hwt_deviation :
                   gr.graph['detection_seq'] += 1
                   gr.graph['deviation_sum'] += abs(hwt_flow_count[0][prediction_count] - gr.graph['flow_count'][-1])
                   gr.graph['prediction_eval'] += hwt_flow_count[0][prediction_count]
+                  gr.graph['prediction_lasts'].append(hwt_flow_count[0][prediction_count])
+                  print len(gr.graph['prediction_lasts'])
                   if gr.graph['detection_seq'] == num_blocks_report:
-                     logger.warning('Average flow count deviation %s from %s per 5 miutes during last %s minutes before %s', gr.graph['deviation_sum']/num_blocks_report,gr.graph['prediction_eval']/num_blocks_report,num_blocks_report*5,time.strftime('%Y-%m-%d %H:%M', time.gmtime(gr.graph['last_flow'])))
-                     gr.graph['flow_count'][-1] = gr.graph['flow_count'][-7*24*12]
+                     logger.error('Average flow count deviation %s from %s per 5 miutes during last %s minutes before %s', gr.graph['deviation_sum']/num_blocks_report,gr.graph['prediction_eval']/num_blocks_report,num_blocks_report*5,time.strftime('%Y-%m-%d %H:%M', time.gmtime(gr.graph['last_flow'])))
                      gr.graph['detection_seq'] = 0
                      gr.graph['deviation_sum'] = 0
                      gr.graph['prediction_eval'] = 0
-                  gr.graph['flow_count'][-1] = gr.graph['flow_count'][-12*24*7]
+                     gr.graph['prediction_lasts'] = deque()
+                  gr.graph['flow_count'][-1] = hwt_flow_count[0][prediction_count]
                else:
                   gr.graph['detection_seq'] = 0
                   gr.graph['deviation_sum'] = 0
                   gr.graph['prediction_eval'] = 0
+                  gr.graph['prediction_lasts'] = deque()
                gr.graph['prediction_count'] += 1
 
          for node_id in gr.nodes():
@@ -205,7 +223,7 @@ def FlowProcess(UR_Flow, is_learning, gr, prop_array, ip_range):
             if not 0 in gr.node[node_id]['time'] and gr.node[node_id]['permanent_addr'] == False:
                gr.node[node_id]['permanent_addr'] = True
                gr.node[node_id]['prediction_count'] = prediction_intervals
-               gr.node[node_id]['hwt_addr'] = []
+               gr.node[node_id]['hwt_addr'] = deque()
                logger.warning('New permanent address: %s in last 2 weeks before:%s', node_id, time.strftime('%Y-%m-%d %H:%M', time.gmtime(gr.node[node_id]['last_seen'])))
             
             if len(gr.node[node_id]['time']) >= (24*12*7*2):
@@ -216,21 +234,25 @@ def FlowProcess(UR_Flow, is_learning, gr, prop_array, ip_range):
                      gr.node[node_id]['detection_seq'] += 1
                      gr.node[node_id]['deviation_sum'] += abs(gr.node[node_id]['hwt_addr'][0][prediction_count] - gr.node[node_id]['time'][-1])
                      gr.node[node_id]['prediction_eval'] += gr.node[node_id]['hwt_addr'][0][prediction_count]
+                     gr.node[node_id]['prediction_lasts'].append(gr.node[node_id]['hwt_addr'][0][prediction_count])
                      if gr.node[node_id]['detection_seq'] == num_blocks_report:
                         logger.warning('IP %s occurence count deviation %s from %s per 5 miutes during last %s minutes before %s', node_id,gr.node[node_id]['deviation_sum']/num_blocks_report,gr.node[node_id]['prediction_eval']/num_blocks_report,num_blocks_report*5,time.strftime('%Y-%m-%d %H:%M', time.gmtime(gr.node[node_id]['last_seen'])))
                         gr.node[node_id]['detection_seq'] = 0
                         gr.node[node_id]['deviation_sum'] = 0
                         gr.node[node_id]['prediction_eval'] = 0
-                     gr.node[node_id]['time'][-1] = gr.node[node_id]['time'][-7*24*12]
+                        for i in range (1,num_blocks_report):
+                           gr.node[node_id]['time'][-i] = gr.node[node_id]['time'][-i]
+                        gr.node[node_id]['prediction_lasts'] = deque()
                   else:
                      gr.node[node_id]['detection_seq'] = 0
                      gr.node[node_id]['deviation_sum'] = 0
                      gr.node[node_id]['prediction_eval'] = 0
+                     gr.node[node_id]['prediction_lasts'] = deque()
 
                   gr.node[node_id]['prediction_count'] += 1
             
             if gr.node[node_id]['prediction_count'] >= prediction_intervals:
-               gr.node[node_id]['hwt_addr'] = []
+               gr.node[node_id]['hwt_addr'] = deque()
                gr.node[node_id]['prediction_count'] = 0
                if gr.node[node_id]['permanent_addr'] == True: 
                   gr.node[node_id]['hwt_addr'] = hwt.HWT(list(gr.node[node_id]['time']), 24*12, 24*12*7, prediction_intervals, alpha = None,  gamma = None,delta=None, initial_values_optimization=[0.1, 0.2, 0.2])
@@ -251,7 +273,7 @@ def FlowProcess(UR_Flow, is_learning, gr, prop_array, ip_range):
             if not 0 in gr[src][dst]['time'] and gr[src][dst]['permanent_edge'] == False:
                gr[src][dst]['permanent_edge'] = True
                gr[src][dst]['prediction_count'] = prediction_intervals
-               gr[src][dst]['hwt_edge'] = []
+               gr[src][dst]['hwt_edge'] = deque()
                logger.warning('New permanent connection from: %s to: %s in las 2 weeks before: %s', src,dst, time.strftime('%Y-%m-%d %H:%M', time.gmtime(gr[src][dst]['last_seen'])))
 
             if len(gr[src][dst]['time']) >= (24*12*7*2):
@@ -262,66 +284,68 @@ def FlowProcess(UR_Flow, is_learning, gr, prop_array, ip_range):
                      gr[src][dst]['detection_seq'] += 1
                      gr[src][dst]['deviation_sum'] += abs(gr[src][dst]['hwt_edge'][0][prediction_count] - gr[src][dst]['time'][-1])
                      gr[src][dst]['prediction_eval'] += gr[src][dst]['hwt_edge'][0][prediction_count]
+                     gr[src][dst]['prediction_lasts'].append(gr[src][dst]['hwt_edge'][0][prediction_count])
                      if gr[src][dst]['detection_seq'] == num_blocks_report:
-                        logger.warning('Edge from %s to %s count measured: %s, predicted: %s during %s minutes before %s', src,dst,gr[src][dst]['time'][-1],gr[src][dst]['hwt_edge'][0][prediction_count],num_blocks_report*5,time.strftime('%Y-%m-%d %H:%M', time.gmtime(gr[src][dst]['last_seen'])))
+                        logger.warning('5 minute average edge %s to %s occurence count deviation: %s, measured %s, predicted in %s, %s minutes before %s', src,dst,gr[src][dst]['prediction_eval']/num_blocks_report,gr[src][dst]['time'][-1],gr[src][dst]['hwt_edge'][0][prediction_count],num_blocks_report*5,time.strftime('%Y-%m-%d %H:%M', time.gmtime(gr[src][dst]['last_seen'])))
                         gr[src][dst]['detection_seq'] = 0
                         gr[src][dst]['deviation_sum'] = 0
                         gr[src][dst]['prediction_eval'] = 0
+                        for i in range (1,num_blocks_report):
+                           gr[src][dst]['time'][-i] = gr[src][dst]['time'][-i]
+                        gr[src][dst]['prediction_lasts'] = deque()
 
                      gr[src][dst]['time'][-1] = gr[src][dst]['time'][-7*24*12]
                   else:
                      gr[src][dst]['detection_seq'] = 0
                      gr[src][dst]['deviation_sum'] = 0
                      gr[src][dst]['prediction_eval'] = 0
+                     gr[src][dst]['prediction_lasts'] = deque()
                   gr[src][dst]['prediction_count'] += 1
 
             if gr[src][dst]['prediction_count'] >= prediction_intervals:
-               gr[src][dst]['hwt_edge'] = []
+               gr[src][dst]['hwt_edge'] = deque()
                gr[src][dst]['prediction_count'] = 0
                if gr[src][dst]['permanent_edge'] == True: 
                   gr[src][dst]['hwt_edge'] = hwt.HWT(list(gr[src][dst]['time']), 24*12, 24*12*7, prediction_intervals, alpha = None,  gamma = None,delta=None, initial_values_optimization=[0.1, 0.2, 0.2])
 
-
-
-            
-
-
             
 #TODO - rozliseni mezi prihlasenim a odhlasenim poprve a opakovanym (info vs debug), mozna presunout z addrecordu, prihlaseni se aktualne v addrecordu sleduje jen poprve ale odhlaseni zde kazde
 
-            
+         print "hwt test", gr.graph['prediction_count'] ,prediction_intervals,len(gr.graph['flow_count']) 
          if gr.graph['prediction_count'] >= prediction_intervals:
             hwt_flow_count = []
             gr.graph['prediction_count'] = 0
-            if 0 not in gr.graph['flow_count']: 
+            if 0 not in gr.graph['flow_count']:
+               print "hwt test", gr.graph['prediction_count'] ,prediction_intervals,len(gr.graph['flow_count']) 
                hwt_flow_count = hwt.HWT(list(gr.graph['flow_count']), 24*12, 24*12*7, prediction_intervals, alpha = None,  gamma = None,delta=None, initial_values_optimization=[0.1, 0.2, 0.2])
+               #print hwt_flow_count[1]
 
          
 
-
+      #print len(gr.graph['flow_count']), (24*12*7*2) -1
 
       if rec.TIME_LAST.getSec() > stats_trigger:
          stats_trigger += time_window
-         #print "high"
          for record in rec_buffer:
-            gr = AddRecord(record, gr, prop_array, ip_range,next_period,first_timestamp,is_learning)
+            gr = AddRecord(record, gr, prop_array, ip_range,next_period,first_timestamp,is_learning) 
             next_period = False
+         if len(gr.graph['flow_count']) >= (24*12*7*2)-1  and is_learning == True:
+            is_learning = False
+            ExportData(directory)
          rec_buffer = []
          rec_buffer.append(rec)
       elif rec.TIME_LAST.getSec() > stats_trigger - time_window:
          rec_buffer.append(rec)
-         #print "mid"
       elif rec.TIME_LAST.getSec() <= stats_trigger - time_window:
-         #print "low"
          gr = AddRecord(rec, gr, prop_array, ip_range,next_period,first_timestamp,is_learning)
          next_period = False
-      #print len (list(gr.graph['flow_count']))
-      #print list(gr.graph['flow_count'][0:-1])
-      
-      #time.sleep(0.05)
    for record in rec_buffer:
       gr = AddRecord(record, gr, prop_array, ip_range,next_period,first_timestamp,is_learning)
       next_period = False
+   if len(gr.graph['flow_count']) == (24*12*7*2)-1  and is_learning ==  True:
+      is_learning = False
+      ExportData(directory)
+   print len(gr.graph['flow_count']), (24*12*7*2),  gr.nodes(), next_period,gr.graph['last_flow']
    return gr, first_timestamp,time_last_seen
 
 
@@ -426,8 +450,8 @@ def AddEdgeTimeInfo(next_period,src_ip, dst_ip, rec,gr,properties,is_learning):
       
    else:
       if is_learning == False:
-         logger.info('New connection from: %s to: %s in time: %s', src_ip,dst_ip, time.strftime('%Y-%m-%d %H:%M', time.gmtime(rec.TIME_LAST.getSec())))
-      gr.add_edge(src_ip,dst_ip,weight = 1,permanent_edge = False, detection_seq = 0, prediction_count = prediction_intervals,hwt_edge = [], last_seen = rec.TIME_LAST.getSec(), time = deque())
+         logger.warning('New connection from: %s to: %s in time: %s', src_ip,dst_ip, time.strftime('%Y-%m-%d %H:%M', time.gmtime(rec.TIME_LAST.getSec())))
+      gr.add_edge(src_ip,dst_ip,weight = 1,permanent_edge = False, detection_seq = 0, prediction_count = prediction_intervals,hwt_edge = deque(),prediction_lasts = deque(), deviation_sum=0,prediction_eval=0,last_seen = rec.TIME_LAST.getSec(), time = deque())
       while len(gr[src_ip][dst_ip]['time']) < len(gr.graph['flow_count']) - 1:
          gr[src_ip][dst_ip]['time'].append(0)
       gr[src_ip][dst_ip]['time'].append(1)
@@ -444,8 +468,8 @@ def AddNodeTimeInfo(next_period,ip,rec,gr,is_learning):
    else:
       if is_learning == False:
          print "new ip ", ip
-         logger.info('New IP address: %s in time: %s', ip, time.strftime('%Y-%m-%d %H:%M', time.gmtime(rec.TIME_LAST.getSec())))
-      gr.add_node(ip,weight = 1, permanent_addr = False, detection_seq = 0, prediction_count = prediction_intervals,hwt_addr=[], last_seen = rec.TIME_LAST.getSec(), time = deque())
+         logger.warning('New IP address: %s in time: %s', ip, time.strftime('%Y-%m-%d %H:%M', time.gmtime(rec.TIME_LAST.getSec())))
+      gr.add_node(ip,weight = 1, permanent_addr = False, detection_seq = 0, prediction_count = prediction_intervals,hwt_addr=deque(),prediction_lasts = deque(), deviation_sum=0,prediction_eval=0, last_seen = rec.TIME_LAST.getSec(), time = deque())
       while len(gr.node[ip]['time']) < len(gr.graph['flow_count']) - 1:
          gr.node[ip]['time'].append(0)
       gr.node[ip]['time'].append(1)
@@ -473,6 +497,8 @@ def AddRecord(rec, gr, properties,ip_range,next_period,first_timestamp,is_learni
       gr.graph['deviation_sum'] = 0      
    if 'prediction_eval' not in gr.graph:
       gr.graph['prediction_eval'] = 0
+   if 'prediction_lasts' not in gr.graph:
+      gr.graph['prediction_lasts'] = deque()
 
 
    #if rec.TIME_LAST.getSec() > gr.graph['last_flow']:
@@ -484,7 +510,10 @@ def AddRecord(rec, gr, properties,ip_range,next_period,first_timestamp,is_learni
       if len(gr.graph['flow_count']) > (24*7*12*2):
          gr.graph['flow_count'].popleft()
    else:
-      gr.graph['flow_count'][-1] += 1
+      if len(gr.graph['flow_count']) == 0:
+         gr.graph['flow_count'].append(1)
+      else:
+         gr.graph['flow_count'][-1] += 1
 
    if next_period == True:
       for node_id in gr.nodes():
@@ -534,25 +563,33 @@ def ParseAdditionalParams(parser,ip_range, prop_array):
 
 def ExportData(directory = "data"):
    print "exporting data"
-   gr.graph['flow_count'] = list(gr.graph['flow_count'])
-   for node_id,node_attrs in gr.nodes(data=True):
-      gr.node[node_id]['permanent_addr'] = True
-      for tm in gr.node[node_id]['time']:
+   print type(gr.graph['flow_count'])
+   gr_to_save = nx.DiGraph(gr)
+   gr_to_save.graph['flow_count'] = list(gr_to_save.graph['flow_count'])
+   gr_to_save.graph['prediction_lasts'] = list(gr_to_save.graph['prediction_lasts'])
+   for node_id,node_attrs in gr_to_save.nodes(data=True):
+      gr_to_save.node[node_id]['permanent_addr'] = True
+      for tm in gr_to_save.node[node_id]['time']:
          if tm == 0:
-            gr.node[node_id]['permanent_addr'] = False
+            gr_to_save.node[node_id]['permanent_addr'] = False
             break
-      gr.node[node_id]['time'] = list(node_attrs['time'])
-   for src,dst,edge_attrs in gr.edges(data=True):
-      gr[src][dst]['permanent_edge'] = True
-      for tm in gr[src][dst]['time']:
+      gr_to_save.node[node_id]['time'] = list(node_attrs['time'])
+      gr_to_save.node[node_id]['hwt_addr'] = list(node_attrs['hwt_addr'])
+      gr_to_save.node[node_id]['prediction_lasts'] = list()
+   for src,dst,edge_attrs in gr_to_save.edges(data=True):
+      gr_to_save[src][dst]['permanent_edge'] = True
+      for tm in gr_to_save[src][dst]['time']:
          if tm == 0:
-            gr[src][dst]['permanent_edge'] = False
+            gr_to_save[src][dst]['permanent_edge'] = False
             break
-      gr[src][dst]['time'] = list(edge_attrs['time'])
+      gr_to_save[src][dst]['time'] = list(edge_attrs['time'])
+      gr_to_save[src][dst]['hwt_edge'] = list(edge_attrs['hwt_edge'])
+      gr_to_save[src][dst]['prediction_lasts'] = list()
    if not os.path.exists(directory):
       os.makedirs(directory)
    with open(str(directory)+"/learned.json", 'w') as outfile1:
-      outfile1.write(json.dumps(json_graph.node_link_data(gr),sort_keys=True, indent=2, separators=(',', ': ')))      
+      outfile1.write(json.dumps(json_graph.node_link_data(gr_to_save),sort_keys=True, indent=2, separators=(',', ': ')))      
+   
    
 def ReadLearnedData(rec,directory = "data"):
    list_shift = 0
@@ -567,14 +604,17 @@ def ReadLearnedData(rec,directory = "data"):
    #print graph['254.158.184.235']['106.53.240.142']['time']
    for src,dst,edge_attrs in graph.edges(data=True):
       graph[src][dst]['permanent_edge'] = True
+      graph[src][dst]['time'] = deque(edge_attrs['time'])
+      graph[src][dst]['prediction_lasts'] = deque(edge_attrs['prediction_lasts'])
       for tm in graph[src][dst]['time']:
          if tm == 0:
             graph[src][dst]['permanent_edge'] = False
             break
-      graph[src][dst]['time'] = deque(edge_attrs['time'])
+
    for node_id,node_attrs in graph.nodes(data=True):
       graph.node[node_id]['time'] = deque(node_attrs['time'])
       graph.node[node_id]['permanent_addr'] = True
+      graph.node[node_id]['prediction_lasts'] =  deque(node_attrs['prediction_lasts'])
       for tm in graph.node[node_id]['time']:
          if tm == 0:
             graph.node[node_id]['permanent_addr'] = False
@@ -585,12 +625,14 @@ def ReadLearnedData(rec,directory = "data"):
    actual_interval_index = (rec.TIME_LAST.getSec()/(60*5))%(7*24*12)
    #print graph.graph['flow_count'][-1]
    graph.graph['flow_count'] = deque(graph.graph['flow_count'])
-   print actual_interval_index - loaded_interval_index
-   graph.graph['flow_count'].rotate(actual_interval_index - loaded_interval_index)
+   graph.graph['prediction_lasts'] = deque(graph.graph['prediction_lasts'])
+   print  loaded_interval_index - actual_interval_index
+   print graph.graph['flow_count']
+   graph.graph['flow_count'].rotate(loaded_interval_index - actual_interval_index)
    for node_id, node_attrs in graph.nodes(data=True):
-      graph.node[node_id]['time'].rotate(actual_interval_index - loaded_interval_index)
+      graph.node[node_id]['time'].rotate(loaded_interval_index - actual_interval_index)
    for src,dst,edge_attrs in graph.edges(data=True):
-      graph[src][dst]['time'].rotate(actual_interval_index - loaded_interval_index)
+      graph[src][dst]['time'].rotate(loaded_interval_index - actual_interval_index)
    print "kontrola rotace",loaded_interval_index,actual_interval_index
    return graph      
 
@@ -637,9 +679,8 @@ if is_learning == True:
    print number_of_periods
    #gr = PartialPeriodFlows()
    "export graph"
-   ExportData(directory)
+   #ExportData(directory)
 
-values = list(xrange(30))
 #res = hwt.HWT(values, 24*12, 24*12*7, 1,alpha = None, beta = None, gamma = None,delta=None, initial_values_optimization=[0.1, 0.1, 0.2, 0.2])
 #print res
 #print gr.graph['flow_count']
