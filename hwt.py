@@ -6,7 +6,7 @@ def HWT(x, m, m2, forecast, alpha = None,  gamma = None,delta=None,initial_value
    
    Y = x[:]
    test_series = []
-   if (alpha == None or gamma == None):
+   if (alpha == None or gamma == None or delta == None):
  
       boundaries = [(0, 1), (0, 1), (0,1)]
       train_series = Y[:-m2*1]
@@ -28,8 +28,8 @@ def HWT(x, m, m2, forecast, alpha = None,  gamma = None,delta=None,initial_value
       if i >= len(Y):
          Y.append(a[-1]+  s[-m] + s2[-m2])
       a.append(alpha * (Y[i] - s2[i] - s[i]) + (1 - alpha) * (a[i]))
-      s.append(delta *  (Y[i] - a[i] - s2[i]) + (1 - delta) * s[i])
-      s2.append(gamma * (Y[i] - a[i] - s[i]) + (1 - gamma) * s2[i])
+      s.append(gamma *  (Y[i] - a[i] - s2[i]) + (1 - gamma) * s[i])
+      s2.append(delta * (Y[i] - a[i] - s[i]) + (1 - delta) * s2[i])
       y.append(a[i + 1] +  s[i + 1] + s2[i + 1])
          
   
