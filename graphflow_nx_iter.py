@@ -21,6 +21,7 @@ from math import ceil
 from collections import deque
 import hwt 
 import matplotlib.pyplot as plt
+import pymef
 
 gr=nx.DiGraph(flow_count=deque(),last_flow=0,)
 rec_buffer = []
@@ -81,14 +82,13 @@ def FlowProcess(UR_Flow, is_learning, gr, prop_array, ip_range):
    saved = False
    stats_trigger = 0
    rec_buffer = []
-   prediction_intervals = prediction_count  = 12*24
+   prediction_intervals = prediction_count  = 12
    incounter = 0
    next_period = False
    time_last_seen = 0
    first_timestamp = 0
    detection_seq = 0
    num_blocks_report = 12
-   perm_addresses = []
    hwt_flow_deviation = 0
    flow_prediction_list = [0]
    flow_prediction_list_total = [0]
@@ -168,8 +168,9 @@ def FlowProcess(UR_Flow, is_learning, gr, prop_array, ip_range):
          NodeAnalysis(gr,hwt_flow_deviation,num_blocks_report)
          EdgeAnalysis(gr,hwt_flow_deviation,num_blocks_report)
 
-
+      
       if is_learning == False:
+         """
          if plot_smooth_interval == plot_smooth_step:
             print "adding step"
             plot_smooth_interval = 0
@@ -179,7 +180,7 @@ def FlowProcess(UR_Flow, is_learning, gr, prop_array, ip_range):
             measured_data_list_total.append(0)
             
 
-         #print time.strftime('%Y-%m-%d %H:%M', time.gmtime(gr.graph['last_flow'])) 
+         #print time.strftime("%Y-%m-%d %H:%M", time.gmtime(gr.graph['last_flow'])) 
          if plot_interval == 12*24*7 and plot_interval > plot_smooth_step:
             print flow_prediction_list,measured_data_list
             PlotFlow(flow_prediction_list,measured_data_list,incounter)
@@ -187,7 +188,14 @@ def FlowProcess(UR_Flow, is_learning, gr, prop_array, ip_range):
             flow_prediction_list = [0]
             measured_data_list = [0]
             plt.clf()
-         
+         """   
+         if plot_interval == 12*24*7:
+            #print flow_prediction_list,measured_data_list
+            PlotFlow(flow_prediction_list,measured_data_list,incounter)
+            plot_interval = 0
+            flow_prediction_list = [0]
+            measured_data_list = [0]
+            plt.clf()
          
       if next_period == True:
          stats_trigger += time_window
@@ -327,10 +335,19 @@ def FlowAnalysis(gr,hwt_flow_deviation, num_blocks_report,flow_prediction_list,m
          prediction_count = gr.graph['prediction_count']
          #print gr.graph['hwt_flow'][0][prediction_count], gr.graph['flow_count'][-1],time.strftime('%Y-%m-%d %H:%M', time.gmtime(gr.graph['last_flow'])) 
          #if (gr.graph['flow_count'][-1] > gr.graph['hwt_flow'][0][prediction_count] + (gr.graph['hwt_flow'][0][prediction_count] * flow_count_deviation) or gr.graph['flow_count'][-1] < gr.graph['hwt_flow'][0][prediction_count] - (gr.graph['hwt_flow'][0][prediction_count] * flow_count_deviation)) and not abs(gr.graph['flow_count'][-1] - gr.graph['hwt_flow'][0][prediction_count]) < gr.graph['hwt_flow'] :
-         flow_prediction_list[-1]+=gr.graph['hwt_flow'][0][prediction_count]
-         measured_data_list[-1]+=gr.graph['flow_count'][-1]
-         flow_prediction_list_total[-1]+=gr.graph['hwt_flow'][0][prediction_count]
-         measured_data_list_total[-1]+=gr.graph['flow_count'][-1]
+         
+         #flow_prediction_list[-1]+=gr.graph['hwt_flow'][0][prediction_count]
+         #measured_data_list[-1]+=gr.graph['flow_count'][-1]
+         #flow_prediction_list_total[-1]+=gr.graph['hwt_flow'][0][prediction_count]
+         #measured_data_list_total[-1]+=gr.graph['flow_count'][-1]
+
+         flow_prediction_list.append(gr.graph['hwt_flow'][0][prediction_count])
+         measured_data_list.append(gr.graph['flow_count'][-1])
+         flow_prediction_list_total.append(gr.graph['hwt_flow'][0][prediction_count])
+         measured_data_list_total.append(gr.graph['flow_count'][-1])
+
+
+         
          if abs(gr.graph['flow_count'][-1] - gr.graph['hwt_flow'][0][prediction_count]) > hwt_flow_deviation:
             gr.graph['detection_seq'] += 1
             gr.graph['prediction_sum'] += gr.graph['hwt_flow'][0][prediction_count] 
