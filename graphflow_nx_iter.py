@@ -1,37 +1,31 @@
 #!/usr/bin/python
 
-import pdb
 import sys
 import os.path
-import traceback
-
-pathList = ["/home/tom/nemea/nemea/nemea-framework/python"]
-# print pathList
 sys.path.append(os.path.join(os.path.dirname(__file__), "..", "..", "..", "python"))
 sys.path.append("/home/tom/nemea/nemea-install/share/nemea-python/")
 sys.path.append("/usr/local/lib/python2.7/dist-packages/")
-# sys.path.append("/usr/local/lib/python2.7/dist-packages/pyMEF/")
-
-print(sys.path)
-
 import trap
 import unirec
-# from py2neo import Graph, Node, Relationship,authenticate
 import networkx as nx
-# import graph_tool.all as grt
-from datetime import datetime
 import time
 import datetime
 import ipaddress
 import json
 from networkx.readwrite import json_graph
 import logging
-from math import ceil
 from collections import deque
 import hwt
 import matplotlib.pyplot as plt
 
-gr = nx.DiGraph(flow_count=deque(),last_flow=0,)
+
+
+
+
+
+
+
+
 AGGREGATION_PERIOD_MINUTES = 5
 HOUR_PERIODS_COUNT = 60/AGGREGATION_PERIOD_MINUTES
 DAY_PERIODS_COUNT = 24 * HOUR_PERIODS_COUNT
@@ -40,10 +34,12 @@ TWO_WEEK_AGGREGATION_PERIODS_COUNT = 2 * WEEK_AGGREGATION_PERIODS_COUNT
 NUM_PERIODS_REPORT = 12
 PLOT_INTERVAL_HOURS = 24
 TIME_WINDOW_SECONDS = 60 * AGGREGATION_PERIOD_MINUTES
-PREDICTION_INTERVALS = 12 * 24
+PREDICTION_INTERVALS = 1
 THRESHOLD = 100
 ALLOWED_PROPERTIES = ["PORT", "BYTES", "PACKETS", "DST_PORT", "SRC_PORT", "HTTP_RSP_CODE", "PROTOCOL", "TCP_FLAGS",
                       "TTL", "TIME_FIRST", "TIME_LAST"]
+gr = nx.DiGraph(flow_count=deque(),last_flow=0,prediction_count = PREDICTION_INTERVALS,detection_seq = 0,prediction_sum = 0,prediction_eval = 0,values_lasts = deque(), hwt_flow = deque(),hwt_flow_last = deque(),hwt_params = [None,None,None],hwt_a = deque(),hwt_s = deque(),hwt_s2 = deque(),hwt_Y =[])
+hwt_deviation = 0
 properties = None
 prop_array = None
 ip_range = None
@@ -222,15 +218,27 @@ def EdgeAnalysis(gr, hwt_flow_deviation, num_blocks_report):
                     gr[src][dst]['prediction_sum'] = 0
                     gr[src][dst]['values_lasts'] = deque()
                 gr[src][dst]['prediction_count'] += 1
+                gr[src][dst]['hwt_a'].pop()
+                gr[src][dst]['hwt_s'].pop()
+                gr[src][dst]['hwt_s2'].pop()
+                gr[src][dst]['hwt_edge'], gr[src][dst]['hwt_a'],gr[src][dst]['hwt_s'],gr[src][dst]['hwt_s2'] = hwt.HWTStep(gr[src][dst]['hwt_edge_last'][-1],gr[src][dst]['hwt_a'],gr[src][dst]['hwt_s'],gr[src][dst]['hwt_s2'],gr[src][dst]['hwt_params'][0],gr[src][dst]['hwt_params'][1], gr[src][dst]['hwt_params'][2],DAY_PERIODS_COUNT, WEEK_AGGREGATION_PERIODS_COUNT,)
+            if gr[src][dst]['prediction_count'] >= PREDICTION_INTERVALS:
+                gr[src][dst]['hwt_edge_last'] = gr[src][dst]['hwt_edge']
+                gr[src][dst]['hwt_edge'] = deque()
+                gr[src][dst]['prediction_count'] = 0
+                if gr[src][dst]['permanent_edge'] == True:
+                    if gr[src][dst]['hwt_params'][0] is None or gr[src][dst]['hwt_params'][1]is None or gr[src][dst]['hwt_params'][2] is None:
+                        gr[src][dst]['hwt_edge'],gr[src][dst]['hwt_params'],_,gr[src][dst]['hwt_a'],gr[src][dst]['hwt_s'],gr[src][dst]['hwt_s2'],gr[src][dst]['hwt_Y'] = hwt.HWT(list(gr[src][dst]['time']), DAY_PERIODS_COUNT, WEEK_AGGREGATION_PERIODS_COUNT, PREDICTION_INTERVALS,
+                                                                            alpha=gr[src][dst]['hwt_params'][0], gamma=gr[src][dst]['hwt_params'][1], delta=gr[src][dst]['hwt_params'][2],
+                                                                            initial_values_optimization=[0.1, 0.2, 0.2])
+                        gr[src][dst]['hwt_edge_last'] = gr[src][dst]['hwt_edge']
 
-        if gr[src][dst]['prediction_count'] >= PREDICTION_INTERVALS:
-            gr[src][dst]['hwt_edge'] = deque()
-            gr[src][dst]['prediction_count'] = 0
-            if gr[src][dst]['permanent_edge'] == True:
-                gr[src][dst]['hwt_edge'],gr[src][dst]['hwt_params'],_ = hwt.HWT(list(gr[src][dst]['time']), DAY_PERIODS_COUNT, WEEK_AGGREGATION_PERIODS_COUNT,
-                                                                                PREDICTION_INTERVALS, alpha=gr[src][dst]['hwt_params'][0], gamma=gr[src][dst]['hwt_params'][1], delta=gr[src][dst]['hwt_params'][2],
-                                                                                initial_values_optimization=[0.1, 0.2, 0.2])
-                print "edge alpha, gamma, delta",src, dst,gr[src][dst]['hwt_params']
+
+                    else:
+
+                        gr[src][dst]['gr[src][dst]'], gr[src][dst]['hwt_a'],gr[src][dst]['hwt_s'],gr[src][dst]['hwt_s2'] = hwt.HWTStep(gr[src][dst]['time'][-1],gr[src][dst]['hwt_a'],gr[src][dst]['hwt_s'],gr[src][dst]['hwt_s2'],gr[src][dst]['hwt_params'][0],gr[src][dst]['hwt_params'][1], gr[src][dst]['hwt_params'][2],DAY_PERIODS_COUNT, WEEK_AGGREGATION_PERIODS_COUNT,)
+
+
 
 
 def NodeAnalysis(gr, hwt_flow_deviation, num_blocks_report):
@@ -276,17 +284,25 @@ def NodeAnalysis(gr, hwt_flow_deviation, num_blocks_report):
                     gr.node[node_id]['detection_seq'] = 0
                     gr.node[node_id]['prediction_sum'] = 0
                     gr.node[node_id]['values_lasts'] = deque()
-
+                gr.node[node_id]['hwt_a'].pop()
+                gr.node[node_id]['hwt_s'].pop()
+                gr.node[node_id]['hwt_s2'].pop()
                 gr.node[node_id]['prediction_count'] += 1
-
+                gr.node[node_id]['hwt_addr'], gr.node[node_id]['hwt_a'],gr.node[node_id]['hwt_s'],gr.node[node_id]['hwt_s2'] = hwt.HWTStep(gr.node[node_id]['hwt_addr_last'][-1],gr.node[node_id]['hwt_a'],gr.node[node_id]['hwt_s'],gr.node[node_id]['hwt_s2'],gr.node[node_id]['hwt_params'][0],gr.node[node_id]['hwt_params'][1], gr.node[node_id]['hwt_params'][2],DAY_PERIODS_COUNT, WEEK_AGGREGATION_PERIODS_COUNT,)
             if gr.node[node_id]['prediction_count'] >= PREDICTION_INTERVALS:
+                gr.node[node_id]['hwt_addr_last'] = gr.node[node_id]['hwt_addr']
                 gr.node[node_id]['hwt_addr'] = deque()
                 gr.node[node_id]['prediction_count'] = 0
                 if gr.node[node_id]['permanent_addr'] == True:
-                    gr.node[node_id]['hwt_addr'],gr.node[node_id]['hwt_params'],_ = hwt.HWT(list(gr.node[node_id]['time']), DAY_PERIODS_COUNT, WEEK_AGGREGATION_PERIODS_COUNT,
-                                                                                            PREDICTION_INTERVALS, alpha=gr.node[node_id]['hwt_params'][0], gamma=gr.node[node_id]['hwt_params'][1], delta=gr.node[node_id]['hwt_params'][2],
-                                                                                            initial_values_optimization=[0.1, 0.2, 0.2])
-                    print "node alpha, gamma, delta",node_id, gr.node[node_id]['hwt_params']
+                    if gr.node[node_id]['hwt_params'][0] is None or gr.node[node_id]['hwt_params'][1]is None or gr.node[node_id]['hwt_params'][2] is None:
+                        gr.node[node_id]['hwt_addr'],gr.node[node_id]['hwt_params'],_,gr.node[node_id]['hwt_a'],gr.node[node_id]['hwt_s'],gr.node[node_id]['hwt_s2'],gr.node[node_id]['hwt_Y'] = hwt.HWT(list(gr.node[node_id]['time']), DAY_PERIODS_COUNT, WEEK_AGGREGATION_PERIODS_COUNT, PREDICTION_INTERVALS,
+                                                                            alpha=gr.node[node_id]['hwt_params'][0], gamma=gr.node[node_id]['hwt_params'][1], delta=gr.node[node_id]['hwt_params'][2],
+                                                                            initial_values_optimization=[0.1, 0.2, 0.2])
+                        gr.node[node_id]['hwt_addr_last'] = gr.node[node_id]['hwt_addr']
+
+
+                    else:
+                        gr.node[node_id]['hwt_addr'], gr.node[node_id]['hwt_a'],gr.node[node_id]['hwt_s'],gr.node[node_id]['hwt_s2'] = hwt.HWTStep(gr.node[node_id]['time'][-1],gr.node[node_id]['hwt_a'],gr.node[node_id]['hwt_s'],gr.node[node_id]['hwt_s2'],gr.node[node_id]['hwt_params'][0],gr.node[node_id]['hwt_params'][1], gr.node[node_id]['hwt_params'][2],DAY_PERIODS_COUNT, WEEK_AGGREGATION_PERIODS_COUNT,)
 
 
 
@@ -314,7 +330,12 @@ def FlowAnalysis(gr, hwt_flow_deviation, num_blocks_report, flow_prediction_list
                     gr.graph['detection_seq'] = 0
                     gr.graph['prediction_sum'] = 0
                     gr.graph['values_lasts'] = deque()
-                gr.graph['flow_count'][-1] = gr.graph['hwt_flow'][actual_prediction_count]
+                gr.graph['hwt_a'].pop()
+                gr.graph['hwt_s'].pop()
+                gr.graph['hwt_s2'].pop()
+
+                #print len(gr.graph['hwt_flow']),len(gr.graph['hwt_a']),len(gr.graph['hwt_flow_last'])
+                gr.graph['hwt_flow'], gr.graph['hwt_a'],gr.graph['hwt_s'],gr.graph['hwt_s2'] = hwt.HWTStep(gr.graph['hwt_flow_last'][-1],gr.graph['hwt_a'],gr.graph['hwt_s'],gr.graph['hwt_s2'],gr.graph['hwt_params'][0],gr.graph['hwt_params'][1], gr.graph['hwt_params'][2],DAY_PERIODS_COUNT, WEEK_AGGREGATION_PERIODS_COUNT,)
             else:
                 gr.graph['detection_seq'] = 0
                 gr.graph['prediction_sum'] = 0
@@ -322,15 +343,23 @@ def FlowAnalysis(gr, hwt_flow_deviation, num_blocks_report, flow_prediction_list
             gr.graph['prediction_count'] += 1
 
         if gr.graph['prediction_count'] >= PREDICTION_INTERVALS:
-            gr.graph['hwt_flow'] = list()
+            gr.graph['hwt_flow_last'] = gr.graph['hwt_flow']
+            gr.graph['hwt_flow'] = deque()
             gr.graph['prediction_count'] = 0
             if 0 not in gr.graph['flow_count']:
-                print "hwt test", gr.graph['prediction_count'], PREDICTION_INTERVALS, len(gr.graph['flow_count'])
-                gr.graph['hwt_flow'],gr.graph['hwt_params'],_ = hwt.HWT(list(gr.graph['flow_count']), DAY_PERIODS_COUNT, WEEK_AGGREGATION_PERIODS_COUNT, PREDICTION_INTERVALS,
+                if gr.graph['hwt_params'][0] is None or gr.graph['hwt_params'][1]is None or gr.graph['hwt_params'][2] is None:
+                    gr.graph['hwt_flow'],gr.graph['hwt_params'],_,gr.graph['hwt_a'],gr.graph['hwt_s'],gr.graph['hwt_s2'],gr.graph['hwt_Y'] = hwt.HWT(list(gr.graph['flow_count']), DAY_PERIODS_COUNT, WEEK_AGGREGATION_PERIODS_COUNT, PREDICTION_INTERVALS,
                                                                         alpha=gr.graph['hwt_params'][0], gamma=gr.graph['hwt_params'][1], delta=gr.graph['hwt_params'][2],
                                                                         initial_values_optimization=[0.1, 0.2, 0.2])
-                print "flow alpha, gamma, delta", gr.graph['hwt_params']
-                #print gr.graph['hwt_flow']
+                    gr.graph['hwt_flow_last'] = gr.graph['hwt_flow']
+
+
+
+                else:
+
+                    gr.graph['hwt_flow'], gr.graph['hwt_a'],gr.graph['hwt_s'],gr.graph['hwt_s2'] = hwt.HWTStep(gr.graph['flow_count'][-1],gr.graph['hwt_a'],gr.graph['hwt_s'],gr.graph['hwt_s2'],gr.graph['hwt_params'][0],gr.graph['hwt_params'][1], gr.graph['hwt_params'][2],DAY_PERIODS_COUNT, WEEK_AGGREGATION_PERIODS_COUNT,)
+
+
 
 def QuietPeriodProcess(gr,threshold):
     if gr.graph['flow_count'][-2] > threshold and gr.graph['flow_count'][-1] < threshold:
@@ -390,27 +419,13 @@ def FillGraph (gr,rec,is_learning, next_period,stats_trigger,rec_buffer,director
     return gr, is_learning, next_period,stats_trigger,rec_buffer
 
 
-def FillGraphRecord(gr, rec):
-
-    if 'flow_count' not in gr.graph:
-        gr.graph['flow_count'] = deque()
-    if 'last_flow' not in gr.graph:
-        gr.graph['last_flow'] = 0
-    if 'prediction_count' not in gr.graph:
-        gr.graph['prediction_count'] = PREDICTION_INTERVALS
-    if 'detection_seq' not in gr.graph:
-        gr.graph['detection_seq'] = 0
-    if 'prediction_sum' not in gr.graph:
-        gr.graph['prediction_sum'] = 0
-    if 'prediction_eval' not in gr.graph:
-        gr.graph['prediction_eval'] = 0
-    if 'values_lasts' not in gr.graph:
-        gr.graph['values_lasts'] = deque()
-    if 'hwt_flow' not in gr.graph:
-        gr.graph['hwt_flow'] = list()
-    if 'hwt_params' not in gr.graph:
-        gr.graph['hwt_params'] = [None,None,None]
+def FillGraphRecord(gr, rec,next_period):
+    if next_period or len(gr.graph['flow_count']) == 0:
+        gr.graph['flow_count'].append(1)
+    else:
+        gr.graph['flow_count'][-1] += 1
     gr.graph['last_flow'] = rec.TIME_LAST.getSec()
+
     return gr
 
 def FillEdgeRecord(next_period, src_ip, dst_ip, rec, gr, properties, is_learning):
@@ -423,8 +438,8 @@ def FillEdgeRecord(next_period, src_ip, dst_ip, rec, gr, properties, is_learning
         if is_learning == False:
             logger.warning('New connection from: %s to: %s in time: %s', src_ip, dst_ip,TimestampToStr('%Y-%m-%d %H:%M',rec.TIME_LAST.getSec()))
         gr.add_edge(src_ip, dst_ip, permanent_edge=False, detection_seq=0,
-                    prediction_count=PREDICTION_INTERVALS, hwt_edge=deque(), hwt_params = [None,None,None], values_lasts=deque(), prediction_sum=0,
-                    prediction_eval=0, last_seen=rec.TIME_LAST.getSec(), time=deque())
+                    prediction_count=PREDICTION_INTERVALS, hwt_edge=deque(),hwt_edge_last=deque(), hwt_params = [None,None,None], values_lasts=deque(), prediction_sum=0,
+                    prediction_eval=0, last_seen=rec.TIME_LAST.getSec(), time=deque(),hwt_a = deque(),hwt_s = deque(),hwt_s2 = deque(),hwt_Y =[])
         print gr[src_ip][dst_ip]['hwt_params']
         while len(gr[src_ip][dst_ip]['time']) < len(gr.graph['flow_count']) - 1:
             gr[src_ip][dst_ip]['time'].append(0)
@@ -445,8 +460,8 @@ def FillNodeRecord(next_period, ip, rec, gr, is_learning):
             logger.warning('New IP address: %s in time: %s', ip,
                            TimestampToStr('%Y-%m-%d %H:%M',rec.TIME_LAST.getSec()))
         gr.add_node(ip, permanent_addr=False, detection_seq=0, prediction_count=PREDICTION_INTERVALS,
-                    hwt_addr=deque(),hwt_params = [None,None,None], values_lasts=deque(), prediction_sum=0, prediction_eval=0,
-                    last_seen=rec.TIME_LAST.getSec(), time=deque())
+                    hwt_addr=deque(),hwt_addr_last=deque(),hwt_params = [None,None,None], values_lasts=deque(), prediction_sum=0, prediction_eval=0,
+                    last_seen=rec.TIME_LAST.getSec(), time=deque(),hwt_a = deque(),hwt_s = deque(),hwt_s2 = deque(),hwt_Y =[])
         while len(gr.node[ip]['time']) < len(gr.graph['flow_count']) - 1:
             gr.node[ip]['time'].append(0)
         gr.node[ip]['time'].append(1)
@@ -455,9 +470,19 @@ def FillNodeRecord(next_period, ip, rec, gr, is_learning):
 
 def NextPeriodProcess(gr, next_period):
     if next_period:
-        gr.graph['flow_count'].append(1)
         if len(gr.graph['flow_count']) > TWO_WEEK_AGGREGATION_PERIODS_COUNT:
             gr.graph['flow_count'].popleft()
+        if len(gr.graph['hwt_flow']) > TWO_WEEK_AGGREGATION_PERIODS_COUNT:
+            gr.graph['hwt_flow'].popleft()
+        if len(gr.graph['hwt_flow_last']) > TWO_WEEK_AGGREGATION_PERIODS_COUNT:
+            gr.graph['hwt_flow_last'].popleft()
+        print "len awt a", len(gr.graph['hwt_a'])
+        if len(gr.graph['hwt_a']) > TWO_WEEK_AGGREGATION_PERIODS_COUNT:
+            gr.graph['hwt_a'].popleft()
+        if len(gr.graph['hwt_s']) > TWO_WEEK_AGGREGATION_PERIODS_COUNT:
+            gr.graph['hwt_s'].popleft()
+        if len(gr.graph['hwt_s2']) > TWO_WEEK_AGGREGATION_PERIODS_COUNT:
+            gr.graph['hwt_s2'].popleft()
         for node_id in gr.nodes():
             gr.node[node_id]['time'].append(0)
             if len(gr.node[node_id]['time']) > TWO_WEEK_AGGREGATION_PERIODS_COUNT:
@@ -466,17 +491,14 @@ def NextPeriodProcess(gr, next_period):
             gr[src][dst]['time'].append(0)
             if len(gr[src][dst]['time']) > TWO_WEEK_AGGREGATION_PERIODS_COUNT:
                 gr[src][dst]['time'].popleft()
-    elif len(gr.graph['flow_count']) == 0:
-        gr.graph['flow_count'].append(1)
-    else:
-        gr.graph['flow_count'][-1] += 1
+
     return gr
 
 
 def AddRecord(rec, gr, properties, ip_range, next_period,  is_learning):
     src_ip = CheckIPRange(str(rec.SRC_IP), ip_range)
     dst_ip = CheckIPRange(str(rec.DST_IP), ip_range)
-    gr = FillGraphRecord(gr,rec)
+    gr = FillGraphRecord(gr,rec,next_period)
     gr = NextPeriodProcess(gr,next_period)
     gr = FillNodeRecord(next_period, src_ip, rec, gr, is_learning)
     gr = FillNodeRecord(next_period, dst_ip, rec, gr, is_learning)
@@ -505,6 +527,11 @@ def ExportData(directory="data"):
     gr_to_save = nx.DiGraph(gr)
     gr_to_save.graph['flow_count'] = list(gr_to_save.graph['flow_count'])
     gr_to_save.graph['values_lasts'] = list(gr_to_save.graph['values_lasts'])
+    gr_to_save.graph['hwt_params'] = [None,None,None]
+    gr_to_save.graph['hwt_a'] = []
+    gr_to_save.graph['hwt_s'] = []
+    gr_to_save.graph['hwt_s2'] = []
+    gr_to_save.graph['hwt_Y'] =[]
     for node_id, node_attrs in gr_to_save.nodes(data=True):
         gr_to_save.node[node_id]['permanent_addr'] = True
         for tm in gr_to_save.node[node_id]['time']:
@@ -512,8 +539,14 @@ def ExportData(directory="data"):
                 gr_to_save.node[node_id]['permanent_addr'] = False
                 break
         gr_to_save.node[node_id]['time'] = list(node_attrs['time'])
-        gr_to_save.node[node_id]['hwt_addr'] = list(node_attrs['hwt_addr'])
+        gr_to_save.node[node_id]['hwt_addr'] = list()
+        gr_to_save.node[node_id]['hwt_addr_last'] = list()
         gr_to_save.node[node_id]['values_lasts'] = list()
+        gr_to_save.node[node_id]['hwt_params'] = [None,None,None]
+        gr_to_save.node[node_id]['hwt_a'] = []
+        gr_to_save.node[node_id]['hwt_s'] = []
+        gr_to_save.node[node_id]['hwt_s2'] = []
+        gr_to_save.node[node_id]['hwt_Y'] =[]
     for src, dst, edge_attrs in gr_to_save.edges(data=True):
         gr_to_save[src][dst]['permanent_edge'] = True
         for tm in gr_to_save[src][dst]['time']:
@@ -521,8 +554,14 @@ def ExportData(directory="data"):
                 gr_to_save[src][dst]['permanent_edge'] = False
                 break
         gr_to_save[src][dst]['time'] = list(edge_attrs['time'])
-        gr_to_save[src][dst]['hwt_edge'] = list(edge_attrs['hwt_edge'])
+        gr_to_save[src][dst]['hwt_edge'] = list()
+        gr_to_save[src][dst]['hwt_edge_last'] = list()
         gr_to_save[src][dst]['values_lasts'] = list()
+        gr_to_save[src][dst]['hwt_params'] = [None,None,None]
+        gr_to_save[src][dst]['hwt_a'] = []
+        gr_to_save[src][dst]['hwt_s'] = []
+        gr_to_save[src][dst]['hwt_s2'] = []
+        gr_to_save[src][dst]['hwt_Y'] =[]
     try:
         if not os.path.exists(directory):
             os.makedirs(directory)
@@ -554,6 +593,8 @@ def ImportData(rec, directory="data"):
         graph[src][dst]['permanent_edge'] = True
         graph[src][dst]['time'] = deque(edge_attrs['time'])
         graph[src][dst]['values_lasts'] = deque(edge_attrs['values_lasts'])
+        graph[src][dst]['hwt_edge'] = deque()
+        graph[src][dst]['hwt_edge_last'] = deque()
         for tm in graph[src][dst]['time']:
             if tm == 0:
                 graph[src][dst]['permanent_edge'] = False
@@ -563,10 +604,24 @@ def ImportData(rec, directory="data"):
         graph.node[node_id]['time'] = deque(node_attrs['time'])
         graph.node[node_id]['permanent_addr'] = True
         graph.node[node_id]['values_lasts'] = deque(node_attrs['values_lasts'])
+        graph.node[node_id]['hwt_addr'] = deque()
+        graph.node[node_id]['hwt_addr_last'] = deque()
+        graph.node[node_id]['hwt_a'] = deque()
+        graph.node[node_id]['hwt_s'] = deque()
+        graph.node[node_id]['hwt_s2'] = deque()
+        graph.node[node_id]['hwt_Y'] = deque()
         for tm in graph.node[node_id]['time']:
             if tm == 0:
                 graph.node[node_id]['permanent_addr'] = False
                 break
+
+    graph.graph['hwt_a'] = deque()
+    graph.graph['hwt_s'] = deque()
+    graph.graph['hwt_s2'] = deque()
+    graph.graph['hwt_Y'] = deque()
+    graph.graph['hwt_flow'] = deque()
+    graph.graph['hwt_flow_last'] = deque()
+    graph.graph['values_lasts'] = deque()
 
     #print graph.graph['last_flow'], rec.TIME_LAST.getSec()
     loaded_interval_index = (graph.graph['last_flow'] / (TIME_WINDOW_SECONDS)) % (WEEK_AGGREGATION_PERIODS_COUNT)
@@ -574,7 +629,6 @@ def ImportData(rec, directory="data"):
     time_shift  = loaded_interval_index - actual_interval_index
     # print graph.graph['flow_count'][-1]
     graph.graph['flow_count'] = deque(graph.graph['flow_count'])
-    graph.graph['values_lasts'] = deque(graph.graph['values_lasts'])
     print "time shift", time_shift
     graph.graph['flow_count'].rotate(time_shift)
     for node_id in graph.nodes():
