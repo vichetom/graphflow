@@ -1,0 +1,15 @@
+\begin{thebibliography}{1}
+\providecommand{\biburl}[1]{\url{#1}}
+\providecommand{\urlprefix}{Available from: }
+\expandafter\ifx\csname urlstyle\endcsname\relax
+  \providecommand{\doi}[1]{doi:\discretionary{}{}{}#1}\else
+  \providecommand{\doi}{doi:\discretionary{}{}{}\begingroup
+  \urlstyle{rm}\Url}\fi
+\providecommand{\eprint}[2][]{\biburl{#2}}
+
+\bibitem{Po01}
+Powel, M. The Canterbury Corpus {[online]}. {November} {2001}, [Cited
+  2011-10-12].
+\urlprefix\biburl{http://corpus.canterbury.ac.nz/index.html}
+
+\end{thebibliography}

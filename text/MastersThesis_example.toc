@@ -1,0 +1,22 @@
+\select@language {UKenglish}
+\select@language {UKenglish}
+\select@language {UKenglish}
+\contentsline {subsection}{Citation of this thesis}{viii}{section*.1}
+\contentsline {chapter}{Introduction}{1}{chapter*.5}
+\contentsline {section}{Motivation and objectives}{1}{section*.6}
+\contentsline {section}{Problem statements}{1}{section*.7}
+\contentsline {section}{State of the Art}{2}{section*.8}
+\contentsline {chapter}{\chapternumberline {1}Data compression}{3}{chapter.1}
+\contentsline {section}{\numberline {1.1}Notions and definitions}{3}{section.1.1}
+\contentsline {subsection}{\numberline {1.1.1}Entropy}{4}{subsection.1.1.1}
+\contentsline {subsection}{\numberline {1.1.2}Classification}{5}{subsection.1.1.2}
+\contentsline {section}{\numberline {1.2}Elementary methods}{5}{section.1.2}
+\contentsline {subsection}{\numberline {1.2.1}RLE}{5}{subsection.1.2.1}
+\contentsline {section}{\numberline {1.3}Dictionary methods}{5}{section.1.3}
+\contentsline {subsection}{\numberline {1.3.1}LZ77}{5}{subsection.1.3.1}
+\contentsline {chapter}{\chapternumberline {2}Implementation and testing}{7}{chapter.2}
+\contentsline {section}{\numberline {2.1}Details of realised tests}{7}{section.2.1}
+\contentsline {section}{\numberline {2.2}Integers distribution and encoding}{7}{section.2.2}
+\contentsline {chapter}{Conclusion}{9}{chapter*.9}
+\contentsline {chapter}{Bibliography}{11}{section*.11}
+\contentsline {appendix}{\chapternumberline {A}Contents of CD}{13}{appendix.A}
