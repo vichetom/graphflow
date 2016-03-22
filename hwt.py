@@ -36,7 +36,7 @@ def HWTStep(Y, a,s,s2,alpha, gamma, delta,m,m2):
     a.append(alpha * (Y - s2[-1] - s[-1]) + (1 - alpha) * (a[-1]))
     s.append(gamma * (Y - a[-1] - s2[-1]) + (1 - gamma) * s[-1])
     s2.append(delta * (Y - a[-1] - s[-1]) + (1 - delta) * s2[-1])
-    hwt_result = [a[-1] + s[-m] + s2[-m2]]
+    hwt_result = a[-1] + s[-m] + s2[-m2]
     return hwt_result, deque(a),deque(s),deque(s2)
 
 def RMSE(params, *args):
