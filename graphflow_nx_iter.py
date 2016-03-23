@@ -674,10 +674,10 @@ def QuietPeriodProcess(gr, threshold,quiet_period):
             all_quiet = False
 
     if all_peak and gr.graph['flow_count'][-1] < threshold and not quiet_period:
-        logger.info('Low traffic period started with %s flows per five minutes in time %s', gr.graph['flow_count'][-1],TimestampToStr('%Y-%m-%d %H:%M', gr.graph['last_flow']))
+        logger.anomaly('Low traffic period started with %s flows per five minutes in time %s', gr.graph['flow_count'][-1],TimestampToStr('%Y-%m-%d %H:%M', gr.graph['last_flow']))
         quiet_period = True
     elif all_quiet and gr.graph['flow_count'][-1] > threshold and quiet_period:
-        logger.info('High traffic period started with %s flows per five minutes in time %s', gr.graph['flow_count'][-1],TimestampToStr('%Y-%m-%d %H:%M', gr.graph['last_flow']))
+        logger.anomaly('High traffic period started with %s flows per five minutes in time %s', gr.graph['flow_count'][-1],TimestampToStr('%Y-%m-%d %H:%M', gr.graph['last_flow']))
         quiet_period = False
     return quiet_period
 
