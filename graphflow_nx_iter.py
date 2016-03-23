@@ -775,7 +775,6 @@ def FillNodeRecord(next_period, ip, rec, gr, is_learning):
         gr.node[ip]['time'][-1] += 1
     else:
         if is_learning == False:
-            unknown_node_list.append([ip])
             print "new ip ", ip
             logger.anomaly('Unknown IP address: %s in time: %s', ip,
                            TimestampToStr('%Y-%m-%d %H:%M', rec.TIME_LAST.getSec()))
@@ -797,7 +796,7 @@ def NextPeriodProcess(gr, next_period):
         for parameter in ['flow_count','hwt_flow','hwt_a', 'hwt_s', 'hwt_s2', 'hwt_Y', 'hwt_deviation', 'flow_prediction_list',
                           'flow_prediction_list_total','measured_data_list', 'measured_data_list_total','deviation_list','deviation_list_total']:
             if len(gr.graph[parameter])>TWO_WEEK_AGGREGATION_PERIODS_COUNT:
-                
+
                 gr.graph[parameter].popleft()
 
         for node_id in gr.nodes():
