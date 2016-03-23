@@ -103,7 +103,9 @@ known_edges_list = []
 unknown_node_list = []
 unknown_edges_list = []
 
-plt.figure(figsize=(20, 15))
+plt.figure(None, (7,5))
+plt.rc('font', family='serif', size=14)
+plt.rc('legend', fontsize=14)
 logging.addLevelName(45, "ANOMALY")
 logger = logging.getLogger(__name__)
 setattr(logger, 'anomaly', lambda *args: logger.log(45, *args))
