@@ -797,7 +797,7 @@ def NextPeriodProcess(gr, next_period):
         for parameter in ['flow_count','hwt_flow','hwt_a', 'hwt_s', 'hwt_s2', 'hwt_Y', 'hwt_deviation', 'flow_prediction_list',
                           'flow_prediction_list_total','measured_data_list', 'measured_data_list_total','deviation_list','deviation_list_total']:
             if len(gr.graph[parameter])>TWO_WEEK_AGGREGATION_PERIODS_COUNT:
-                print parameter
+                
                 gr.graph[parameter].popleft()
 
         for node_id in gr.nodes():
