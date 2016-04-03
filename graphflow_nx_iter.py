@@ -87,6 +87,9 @@ THRESHOLD = 100
 ##Minimal number of flows during one period to detect anomaly.
 MINIMUM_FLOW_DETECTION_THRESHOLD = 50
 
+##Number of periods for change state of traffic. (low/high)
+TRAFFIC_STATE_CHANGE_PERIOD = 12
+
 ##Parameters accepted by module to be processed.
 ALLOWED_PROPERTIES = ["PORT", "BYTES", "PACKETS", "DST_PORT", "SRC_PORT", "HTTP_RSP_CODE", "PROTOCOL", "TCP_FLAGS",
                       "TTL", "TIME_FIRST", "TIME_LAST"]
@@ -119,7 +122,7 @@ parser.add_option("-p", "--properties",
                   help="Set properties to be saved. Separated by comma. Its possible to choose from: " + str(
                       ALLOWED_PROPERTIES))
 parser.add_option("-s", "--logger-severity",
-                  dest="logger_severity", default="WARNING",
+                  dest="logger_severity", default="ANOMALY",
                   help="Set severity for logger from: info, debug, warning, error")
 parser.add_option("-r", "--ip-range",
                   dest="ip_range", default=None,
@@ -138,10 +141,19 @@ parser.add_option("-q", "--quiet",
 # ------------------------------------------------------
 
 
+def DataProcessInitialization(gr,known_nodes_set,known_edges_set):
+    gr.graph['prediction_count'] = PREDICTION_INTERVALS
+    for node_id in gr.nodes():
+        gr.node[node_id]['prediction_count'] = PREDICTION_INTERVALS
+        if gr.node[node_id]['permanent_addr']:
+            known_nodes_set.add(node_id)
+    for src, dst in gr.edges():
+        gr[src][dst]['prediction_count'] = PREDICTION_INTERVALS
+        if gr[src][dst]['permanent_edge']:
+            known_edges_set.add((src,dst))
+
 def FlowProcess( gr  ):
-    stats_trigger = 0
     rec_buffer = []
-    is_first_run = True
     next_period = False
     UR_Flow = None
     plot_interval = 0
@@ -150,56 +162,50 @@ def FlowProcess( gr  ):
     quiet_period = True
     known_nodes_set = set()
     known_edges_set = set()
-    unknown_nodes_set = set()
 
-    ## Main loop (trap.stop is set to True when SIGINT or SIGTERM is received)
-    while not trap.stop:
-        ## Read data from input interface
-        rec, UR_Flow = DataLoader(UR_Flow)
-        if rec == -1:
-            break
-        if is_first_run:
-            stats_trigger = rec.TIME_LAST.getSec() - (rec.TIME_LAST.getSec() % 60) + (10 * 60)
-            if is_learning == False:
-                gr = ImportData(rec, file_path)
-                known_edges_set = gr.edges()
-                known_nodes_set = gr.nodes()
-                gr.graph['prediction_count'] = PREDICTION_INTERVALS
-                for node_id in gr.nodes():
-                    gr.node[node_id]['prediction_count'] = PREDICTION_INTERVALS
-                for src, dst in gr.edges():
-                    gr[src][dst]['prediction_count'] = PREDICTION_INTERVALS
+    ## Read data from input interface
+    rec, UR_Flow = DataLoader(UR_Flow)
+    if not rec == -1:
+        stats_trigger = rec.TIME_LAST.getSec() - (rec.TIME_LAST.getSec() % 60) + (10 * 60)
+        if not is_learning:
+            gr = ImportData(rec,file_path)
+            DataProcessInitialization(gr,known_nodes_set,known_edges_set)
 
-        if rec.TIME_LAST.getSec() > stats_trigger:
-            next_period = True
-            if not is_learning:
-                if plot_interval_periods is not None:
-                    plot_interval += 1
-                CleanGraph(gr)
-                FlowAnalysis(gr,  NUM_PERIODS_REPORT)
-                NodeAnalysis(gr,  NUM_PERIODS_REPORT,known_nodes_set)
-                EdgeAnalysis(gr,  NUM_PERIODS_REPORT,known_edges_set)
-                quiet_period = QuietPeriodProcess(gr, THRESHOLD,quiet_period)
 
-        #if not is_learning and plot_interval >= plot_interval_periods and plot_interval_periods is not None and TimestampToStr('%H', gr.graph['last_flow']) == "03" and TimestampToStr('%w', gr.graph['last_flow']) == "1":
-        if not is_learning and plot_interval >= plot_interval_periods and plot_interval_periods is not None and TimestampToStr('%H', gr.graph['last_flow']) == "03":
-            PlotData(gr,False)
-            plot_interval = 0
+        ## Main loop (trap.stop is set to True when SIGINT or SIGTERM is received)
+        while not trap.stop:
+            if rec.TIME_LAST.getSec() > stats_trigger:
+                next_period = True
+                if not is_learning:
+                    if plot_interval_periods is not None:
+                        plot_interval += 1
+                    CleanGraph(gr)
+                    FlowAnalysis(gr,  NUM_PERIODS_REPORT)
+                    NodeAnalysis(gr,  NUM_PERIODS_REPORT,known_nodes_set)
+                    EdgeAnalysis(gr,  NUM_PERIODS_REPORT,known_edges_set)
+                    quiet_period = QuietPeriodProcess(gr, THRESHOLD,TRAFFIC_STATE_CHANGE_PERIOD,quiet_period)
 
-        gr, is_learning, next_period, stats_trigger, rec_buffer = FillGraph(gr, rec,ip_range, is_learning,prop_array, next_period,
-                                                                            stats_trigger, rec_buffer, file_path)
 
-        is_first_run = False
+            #if not is_learning and plot_interval >= plot_interval_periods and plot_interval_periods is not None and TimestampToStr('%H', gr.graph['last_flow']) == "03" and TimestampToStr('%w', gr.graph['last_flow']) == "1":
+            if not is_learning and plot_interval >= plot_interval_periods and plot_interval_periods is not None and TimestampToStr('%H', gr.graph['last_flow']) == "03":
+                PlotData(gr,False)
+                plot_interval = 0
 
-    for record in rec_buffer:
-        gr = AddRecord(record, gr, prop_array, ip_range, next_period, is_learning)
-        next_period = False
-    if len(gr.graph['flow_count']) >= (TWO_WEEK_AGGREGATION_PERIODS_COUNT) and is_learning == True:
-        known_nodes_set = gr.nodes()
-        known_edges_set = gr.edges()
-        ExportData(file_path)
-    PlotData(gr,True)
+            gr, is_learning, next_period, stats_trigger, rec_buffer = FillGraph(gr, rec,ip_range, is_learning,prop_array, next_period,
+                                                                                stats_trigger, rec_buffer, file_path,known_nodes_set,known_edges_set)
+            ## Read data from input interface
+            rec, UR_Flow = DataLoader(UR_Flow)
+            if rec == -1:
+                break
+
+        for record in rec_buffer:
+            gr = AddRecord(record, gr, prop_array, ip_range, next_period, is_learning)
+            next_period = False
+        if len(gr.graph['flow_count']) >= (TWO_WEEK_AGGREGATION_PERIODS_COUNT) and is_learning == True:
+            ExportData(file_path)
+        PlotData(gr,True)
     return gr
+
 
 def CleanGraph(gr):
     for node,data in gr.nodes(data=True):
@@ -208,6 +214,7 @@ def CleanGraph(gr):
             gr.remove_node(node)
 
     return gr
+
 
 def PlotData (gr,is_total):
     if is_total:
@@ -687,10 +694,10 @@ def FlowAnalysis(gr, num_blocks_report):
                         DAY_PERIODS_COUNT, WEEK_AGGREGATION_PERIODS_COUNT, )
 
 
-def QuietPeriodProcess(gr, threshold,quiet_period):
+def QuietPeriodProcess(gr, threshold,change_period, quiet_period):
     all_quiet = True
     all_peak = True
-    for count in list(gr.graph['flow_count'])[-12:-2]:
+    for count in list(gr.graph['flow_count'])[-change_period:-2]:
         if count < threshold:
             all_peak = False
         else:
@@ -736,7 +743,7 @@ def CheckIPRange(ip, ip_range):
     return ip
 
 
-def FillGraph(gr, rec, ip_range,is_learning, prop_array, next_period, stats_trigger, rec_buffer, file_path):
+def FillGraph(gr, rec, ip_range,is_learning, prop_array, next_period, stats_trigger, rec_buffer, file_path,known_nodes_set,known_edges_set):
     if next_period:
         stats_trigger += TIME_WINDOW_SECONDS
         for record in rec_buffer:
@@ -744,8 +751,9 @@ def FillGraph(gr, rec, ip_range,is_learning, prop_array, next_period, stats_trig
             next_period = False
         if len(gr.graph['flow_count']) >= TWO_WEEK_AGGREGATION_PERIODS_COUNT and is_learning == True:
             is_learning = False
+            DataProcessInitialization(gr,known_nodes_set,known_edges_set)
             ExportData(file_path)
-        rec_buffer = []
+        rec_buffer = list()
         rec_buffer.append(rec)
     elif rec.TIME_LAST.getSec() > stats_trigger - TIME_WINDOW_SECONDS:
         rec_buffer.append(rec)
@@ -954,7 +962,7 @@ def ExportData(file_path="data"):
         json.dumps(json_graph.node_link_data(gr_to_save), sort_keys=True, indent=2, separators=(',', ': ')))
 
 
-def ImportData(rec, file_path="data/learned.json"):
+def ImportData(rec,file_path="data/learned.json"):
     print "Importing data"
     print file_path
     if not os.path.exists(file_path):
