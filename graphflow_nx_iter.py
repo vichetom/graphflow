@@ -269,7 +269,7 @@ def ImportWhitelist(whitelist_file_path,type):
 
     rawData = list()
     for line in filehandle:
-        rawData = line.strip().split(',')
+        rawData = line.strip().split(';')
     return set(rawData)
 
 def ExportWhitelist(whitelist, whitelist_file_path, type):
@@ -292,9 +292,9 @@ def ExportWhitelist(whitelist, whitelist_file_path, type):
         return
     for item in whitelist:
         if type == "edge":
-            filehandle.write("(" + unicode(item[0]) + "," + unicode(item[1]) + ")" + ',')
+            filehandle.write("(" + unicode(item[0]) + "," + unicode(item[1]) + ")" + ';')
         else:
-            filehandle.write(unicode(item) + ',')
+            filehandle.write(unicode(item) + ';')
 
 
 def PlotData(gr, is_total):
