@@ -181,6 +181,8 @@ def FlowProcess(gr):
                         plot_interval += 1
                     known_nodes_set = ImportWhitelist(whitelist_file_path,"node")
                     known_edges_set = ImportWhitelist(whitelist_file_path,"edge")
+                    print "nodes", known_nodes_set
+                    print "edges", known_edges_set
                     CleanGraph(gr)
                     FlowAnalysis(gr, NUM_PERIODS_REPORT)
                     NodeAnalysis(gr, NUM_PERIODS_REPORT, known_nodes_set)
@@ -255,7 +257,7 @@ def ImportWhitelist(whitelist_file_path,type):
         elif type == "edge":
             whitelist_file_path = filepath + "Connection-" + filename
         else:
-            print "Specify node / edge to read.aaaa"
+            print "Specify node / edge to read."
             return list()
         if not os.path.exists(whitelist_file_path):
             print "Could not find learned data, start with -l parameter first."
