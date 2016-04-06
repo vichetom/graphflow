@@ -447,29 +447,29 @@ def EdgeAnalysis(gr, num_blocks_report, known_edges_set):
         if gr[src][dst]['time'][-1] == 0:
             if gr[src][dst]['time'][-2] != 0:
                 if (src, dst) in known_edges_set:
-                    logger.info('Known connection: %s - %s disconnected in time: %s', src, dst,
+                    logger.info('Known connection: (%s,%s) disconnected in time: %s', src, dst,
                                 TimestampToStr('%Y-%m-%d %H:%M', gr[src][dst]['last_seen']))
                 else:
-                    logger.anomaly('Unknown connection: %s - %s disconnected in time: %s', src, dst,
+                    logger.anomaly('Unknown connection: (%s,%s) disconnected in time: %s', src, dst,
                                    TimestampToStr('%Y-%m-%d %H:%M', gr[src][dst]['last_seen']))
 
         elif gr[src][dst]['time'][-2] == 0:
             if (src, dst) in known_edges_set:
-                logger.info('Known connection %s - %s connected in time: %s', src, dst,
+                logger.info('Known connection (%s,%s) connected in time: %s', src, dst,
                             TimestampToStr('%Y-%m-%d %H:%M', gr[src][dst]['last_seen']))
             else:
-                logger.anomaly('Unknown connection %s - %s connected in time: %s', src, dst,
+                logger.anomaly('Unknown connection (%s,%s) connected in time: %s', src, dst,
                                TimestampToStr('%Y-%m-%d %H:%M', gr[src][dst]['last_seen']))
 
         if not 0 in gr[src][dst]['time'] and not gr[src][dst]['permanent_edge']:
             gr[src][dst]['permanent_edge'] = True
             gr[src][dst]['prediction_count'] = PREDICTION_INTERVALS
             gr[src][dst]['hwt_edge'] = deque()
-            logger.info('New regular connection: %s - %s in last 2 weeks before: %s', src, dst,
+            logger.info('New regular connection: (%s,%s) in last 2 weeks before: %s', src, dst,
                         TimestampToStr('%Y-%m-%d %H:%M', gr[src][dst]['last_seen']))
         if 0 in gr[src][dst]['time'] and gr[src][dst]['permanent_edge']:
             gr[src][dst]['permanent_edge'] = False
-            logger.info('Regular connection: %s - %s disconected in last 2 weeks before: %s', src, dst,
+            logger.info('Regular connection: (%s,%s) disconected in last 2 weeks before: %s', src, dst,
                         TimestampToStr('%Y-%m-%d %H:%M', gr[src][dst]['last_seen']))
 
         if len(gr[src][dst]['time']) >= (TWO_WEEK_AGGREGATION_PERIODS_COUNT):
@@ -499,7 +499,7 @@ def EdgeAnalysis(gr, num_blocks_report, known_edges_set):
                     if gr[src][dst]['detection_seq'] == num_blocks_report:
                         if int(gr[src][dst]['values_last_sum'] / num_blocks_report) > MINIMUM_FLOW_DETECTION_THRESHOLD:
                             logger.anomaly(
-                                'Connection %s - %s flows count: %s prediction: %s per %s miutes during last %s minutes before %s',
+                                'Connection (%s,%s) flows count: %s prediction: %s per %s miutes during last %s minutes before %s',
                                 src, dst,
                                 int(gr[src][dst]['values_last_sum'] / num_blocks_report),
                                 int(gr[src][dst]['prediction_sum'] / num_blocks_report),
@@ -1154,6 +1154,12 @@ def ImportData(rec, file_path="data/learned.json"):
                               'measured_data_list_total', 'deviation_list', 'deviation_list_total']
     TrimImportedData(graph, time_shift,list_to_shift,"edge")
     print "kontrola rotace", loaded_interval_index, current_interval_index, time_shift
+
+    graph.graph['last_flow'] = rec.TIME_LAST.getSec()
+    for node_id in graph.nodes():
+        graph.node[node_id]['last_seen'] = rec.TIME_LAST.getSec()
+    for src, dst in graph.edges():
+        graph[src][dst]['last_seen'] = rec.TIME_LAST.getSec()
     return graph
 
 
