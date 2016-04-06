@@ -446,6 +446,7 @@ def EdgeAnalysis(gr, num_blocks_report, known_edges_set):
     for src, dst in gr.edges():
         if gr[src][dst]['time'][-1] == 0:
             if gr[src][dst]['time'][-2] != 0:
+                print known_edges_set
                 if (src, dst) in known_edges_set:
                     logger.info('Known connection: (%s,%s) disconnected in time: %s', src, dst,
                                 TimestampToStr('%Y-%m-%d %H:%M', gr[src][dst]['last_seen']))
