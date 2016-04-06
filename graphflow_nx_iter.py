@@ -83,10 +83,10 @@ PREDICTION_INTERVALS = 1
 HWT_SCALING_FACTOR = 2.5
 
 ##Number of flows during one period dividing traffic to low/high usage.
-THRESHOLD = 100
+THRESHOLD = 45000
 
 ##Minimal number of flows during one period to detect anomaly.
-MINIMUM_FLOW_DETECTION_THRESHOLD = 50
+MINIMUM_FLOW_DETECTION_THRESHOLD = 100
 
 ##Number of periods for change state of traffic. (low/high)
 TRAFFIC_STATE_CHANGE_PERIOD = 12
@@ -181,8 +181,6 @@ def FlowProcess(gr):
                         plot_interval += 1
                     known_nodes_set = ImportWhitelist(whitelist_file_path,"node")
                     known_edges_set = ImportWhitelist(whitelist_file_path,"edge")
-                    print "nodes", known_nodes_set
-                    print "edges", known_edges_set
                     CleanGraph(gr)
                     FlowAnalysis(gr, NUM_PERIODS_REPORT)
                     NodeAnalysis(gr, NUM_PERIODS_REPORT, known_nodes_set)
@@ -448,7 +446,6 @@ def EdgeAnalysis(gr, num_blocks_report, known_edges_set):
     for src, dst in gr.edges():
         if gr[src][dst]['time'][-1] == 0:
             if gr[src][dst]['time'][-2] != 0:
-                print known_edges_set
                 if (src, dst) in known_edges_set:
                     logger.info('Known connection: (%s,%s) disconnected in time: %s', src, dst,
                                 TimestampToStr('%Y-%m-%d %H:%M', gr[src][dst]['last_seen']))
