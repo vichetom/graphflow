@@ -401,8 +401,8 @@ def PlotFlow(flow_prediction_list, measured_data_list, deviation_list, img_path,
         plt.savefig(str(img_path) + 'weekdemostration' + '.png')
         # plt.show()
         if len(deviation_list) > 0:
-            plt.plot(time_list, interval_low, label='low interval')
-            plt.plot(time_list, interval_high, label='high interval')
+            plt.plot(time_list, interval_low, label='lower limit')
+            plt.plot(time_list, interval_high, label='upper limit')
         else:
             plt.plot(time_list, flow_prediction_list, label='real data')
         plt.legend(loc='upper center', bbox_to_anchor=(0.5, 1.15),
