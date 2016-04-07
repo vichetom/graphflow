@@ -265,10 +265,18 @@ def ImportWhitelist(whitelist_file_path,type):
         print "Could not find learned data, start with -l parameter first.."
         return list()
 
-    rawData = list()
+    processed_data = set()
     for line in filehandle:
-        rawData = line.strip().split(';')
-    return set(rawData)
+        raw_data = line.strip().split(';')
+        for tup in raw_data:
+            if type == "edge":
+                tup = tup.strip().strip('(').strip(')').split(',')
+                if len(tup) == 2:
+                    res = tuple(((unicode(tup[0])),(unicode(tup[1]))))
+                    processed_data.add(res)
+            else:
+                processed_data.add(unicode(tup))
+    return processed_data
 
 def ExportWhitelist(whitelist, whitelist_file_path, type):
     try:
@@ -444,6 +452,8 @@ def LoggerInitialization(logger_severity):
 
 def EdgeAnalysis(gr, num_blocks_report, known_edges_set):
     for src, dst in gr.edges():
+        print (src, dst)
+
         if gr[src][dst]['time'][-1] == 0:
             if gr[src][dst]['time'][-2] != 0:
                 if (src, dst) in known_edges_set:
