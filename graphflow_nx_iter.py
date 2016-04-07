@@ -452,8 +452,6 @@ def LoggerInitialization(logger_severity):
 
 def EdgeAnalysis(gr, num_blocks_report, known_edges_set):
     for src, dst in gr.edges():
-        print (src, dst)
-
         if gr[src][dst]['time'][-1] == 0:
             if gr[src][dst]['time'][-2] != 0:
                 if (src, dst) in known_edges_set:
