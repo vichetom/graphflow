@@ -279,12 +279,15 @@ def ImportWhitelist(whitelist_file_path,type):
     return processed_data
 
 def ExportWhitelist(whitelist, whitelist_file_path, type):
+    whitelist_file_path_all = ""
     try:
         (filepath, filename) = os.path.split(whitelist_file_path)
         if type == "node":
             whitelist_file_path = filepath + "IP-" + filename
+            whitelist_file_path_all = filepath + "IP-ALL-" + filename
         elif type == "edge":
             whitelist_file_path = filepath + "Connection-" + filename
+            whitelist_file_path_all = filepath + "Connection-ALL-" + filename
         else:
             print "Specify node / edge to read."
             return
@@ -293,14 +296,22 @@ def ExportWhitelist(whitelist, whitelist_file_path, type):
             if not os.path.exists(filepath):
                 os.makedirs(filepath)
         filehandle = open(str(whitelist_file_path), 'w')
+        filehandle_all = open(str(whitelist_file_path_all), 'w')
     except IOError:
         print "Can not write data."
         return
-    for item in whitelist:
-        if type == "edge":
+    if type == "edge":
+        for item in whitelist:
             filehandle.write("(" + unicode(item[0]) + "," + unicode(item[1]) + ")" + ';')
-        else:
+        for item in gr.edges():
+            filehandle_all.write("(" + unicode(item[0]) + "," + unicode(item[1]) + ")" + ';')
+    else:
+        for item in whitelist:
             filehandle.write(unicode(item) + ';')
+        for item in gr.nodes():
+            filehandle_all.write(unicode(item) + ';')
+
+
 
 
 def PlotData(gr, is_total):
