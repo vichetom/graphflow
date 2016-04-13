@@ -71,7 +71,7 @@ TWO_WEEK_AGGREGATION_PERIODS_COUNT = 2 * WEEK_AGGREGATION_PERIODS_COUNT
 NUM_PERIODS_REPORT = 3
 
 ##Length of period for graph plotting in hours.
-GRAPH_STRUCTURE_PLOT_INTERVAL_DAYS = 14
+GRAPH_STRUCTURE_PLOT_INTERVAL_DAYS = 1
 
 ##Number of seconds in on period (length of time window in seconds).
 TIME_WINDOW_SECONDS = 60 * AGGREGATION_PERIOD_MINUTES
@@ -242,8 +242,8 @@ def DataProcessInitialization(gr, known_nodes_set, known_edges_set, whitelist_fi
         gr[src][dst]['prediction_count'] = PREDICTION_INTERVALS
         if gr[src][dst]['permanent_edge']:
             known_edges_set.add((src, dst))
-    ExportWhitelist(known_nodes_set, whitelist_file_path, "node")
-    ExportWhitelist(known_edges_set, whitelist_file_path, "edge")
+    ExportWhitelist(gr,known_nodes_set, whitelist_file_path, "node")
+    ExportWhitelist(gr,known_edges_set, whitelist_file_path, "edge")
     return known_nodes_set, known_edges_set
 
 
@@ -278,7 +278,7 @@ def ImportWhitelist(whitelist_file_path,type):
                 processed_data.add(unicode(tup))
     return processed_data
 
-def ExportWhitelist(whitelist, whitelist_file_path, type):
+def ExportWhitelist(gr,whitelist, whitelist_file_path, type):
     whitelist_file_path_all = ""
     try:
         (filepath, filename) = os.path.split(whitelist_file_path)
@@ -300,6 +300,7 @@ def ExportWhitelist(whitelist, whitelist_file_path, type):
     except IOError:
         print "Can not write data."
         return
+    print gr.edges()
     if type == "edge":
         for item in whitelist:
             filehandle.write("(" + unicode(item[0]) + "," + unicode(item[1]) + ")" + ';')
@@ -357,6 +358,7 @@ def PlotGraph(gr, img_path):
     node_plot_list = []
     edge_plot_list = []
     plt.figure()
+    gr_to_export = nx.DiGraph()
 
     try:
         (filepath, filename) = os.path.split(img_path)
@@ -366,15 +368,18 @@ def PlotGraph(gr, img_path):
             for count in list(data['time'])[-GRAPH_STRUCTURE_PLOT_INTERVAL_DAYS * DAY_PERIODS_COUNT:]:
                 if count > 0:
                     node_plot_list.append(node)
+                    gr_to_export.add_node(node)
                     break
         for src, dst, data in gr.edges(data=True):
             for count in list(data['time'])[-GRAPH_STRUCTURE_PLOT_INTERVAL_DAYS * DAY_PERIODS_COUNT:]:
                 if count > 0:
                     edge_plot_list.append([src, dst])
+                    gr_to_export.add_edge(src, dst)
                     break
         nx.draw_shell(gr, nodelist=node_plot_list, edgelist=edge_plot_list, font_color="c", arrows=True,
                       with_labels=True)
         print str(img_path) + 'graph.pdf'
+        nx.write_gexf(gr_to_export, str(img_path) + 'graph.gexf')
         plt.savefig(str(img_path) + 'graph.pdf')
     except IOError:
         print "Can not write image data."
