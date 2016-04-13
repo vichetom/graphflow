@@ -185,7 +185,7 @@ def FlowProcess(gr):
                     FlowAnalysis(gr, NUM_PERIODS_REPORT)
                     NodeAnalysis(gr, NUM_PERIODS_REPORT, known_nodes_set)
                     EdgeAnalysis(gr, NUM_PERIODS_REPORT, known_edges_set)
-                    quiet_period = QuietPeriodProcess(gr, THRESHOLD, TRAFFIC_STATE_CHANGE_PERIOD, quiet_period)
+                    quiet_period = QuietPeriodProcess(gr, THRESHOLD, TRAFFIC_STATE_CHANGE_PERIOD, quiet_dperiod)
                     prediction_initialized = True
 
 
@@ -471,18 +471,18 @@ def EdgeAnalysis(gr, num_blocks_report, known_edges_set):
         if gr[src][dst]['time'][-1] == 0:
             if gr[src][dst]['time'][-2] != 0:
                 if (src, dst) in known_edges_set:
-                    logger.info('Known connection: (%s,%s) disconnected in time: %s', src, dst,
+                    logger.info('Disconnected known connection: (%s,%s) in time: %s', src, dst,
                                 TimestampToStr('%Y-%m-%d %H:%M', gr[src][dst]['last_seen']))
                 else:
-                    logger.anomaly('Unknown connection: (%s,%s) disconnected in time: %s', src, dst,
+                    logger.anomaly('Disconnected unknown connection: (%s,%s) in time: %s', src, dst,
                                    TimestampToStr('%Y-%m-%d %H:%M', gr[src][dst]['last_seen']))
 
         elif gr[src][dst]['time'][-2] == 0:
             if (src, dst) in known_edges_set:
-                logger.info('Known connection (%s,%s) connected in time: %s', src, dst,
+                logger.info('Connected known connection (%s,%s) in time: %s', src, dst,
                             TimestampToStr('%Y-%m-%d %H:%M', gr[src][dst]['last_seen']))
             else:
-                logger.anomaly('Unknown connection (%s,%s) connected in time: %s', src, dst,
+                logger.anomaly('Connected unknown connection (%s,%s) in time: %s', src, dst,
                                TimestampToStr('%Y-%m-%d %H:%M', gr[src][dst]['last_seen']))
 
         if not 0 in gr[src][dst]['time'] and not gr[src][dst]['permanent_edge']:
@@ -603,17 +603,17 @@ def NodeAnalysis(gr, num_blocks_report, known_nodes_set):
         if gr.node[node_id]['time'][-1] == 0:
             if gr.node[node_id]['time'][-2] != 0:
                 if node_id in known_nodes_set:
-                    logger.info('Known IP address: %s disconnected in time: %s', node_id,
+                    logger.info('Disconnected known IP address: %s in time: %s', node_id,
                                 TimestampToStr('%Y-%m-%d %H:%M', gr.node[node_id]['last_seen']))
                 else:
-                    logger.anomaly('Unknown IP address: %s disconnected in time: %s', node_id,
+                    logger.anomaly('Disconnected unknown IP address: %s in time: %s', node_id,
                                    TimestampToStr('%Y-%m-%d %H:%M', gr.node[node_id]['last_seen']))
         elif gr.node[node_id]['time'][-2] == 0:
             if node_id in known_nodes_set:
-                logger.info('Known IP address: %s connected in time: %s', node_id,
+                logger.info('Connected known IP address: %s in time: %s', node_id,
                             TimestampToStr('%Y-%m-%d %H:%M', gr.node[node_id]['last_seen']))
             else:
-                logger.anomaly('Unknown IP address: %s connected in time: %s', node_id,
+                logger.anomaly('Connected unknown IP address: %s in time: %s', node_id,
                                TimestampToStr('%Y-%m-%d %H:%M', gr.node[node_id]['last_seen']))
 
         if not 0 in gr.node[node_id]['time'] and not gr.node[node_id]['permanent_addr']:
@@ -624,7 +624,7 @@ def NodeAnalysis(gr, num_blocks_report, known_nodes_set):
                         TimestampToStr('%Y-%m-%d %H:%M', gr.node[node_id]['last_seen']))
         if 0 in gr.node[node_id]['time'] and gr.node[node_id]['permanent_addr']:
             gr.node[node_id]['permanent_addr'] = False
-            logger.info('Regular IP address: %s disconnected in last 2 weeks before:%s', node_id,
+            logger.info('Disconnected regular IP address: %s in last 2 weeks before:%s', node_id,
                         TimestampToStr('%Y-%m-%d %H:%M', gr.node[node_id]['last_seen']))
 
         if len(gr.node[node_id]['time']) >= TWO_WEEK_AGGREGATION_PERIODS_COUNT:
