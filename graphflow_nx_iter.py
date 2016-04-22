@@ -80,7 +80,7 @@ TIME_WINDOW_SECONDS = 60 * AGGREGATION_PERIOD_MINUTES
 PREDICTION_INTERVALS = 1
 
 ##Decalaration of Holt-Winters deviation constatnt.
-HWT_SCALING_FACTOR = 2.5
+HWT_SCALING_FACTOR = 3
 
 ##Number of flows during one period dividing traffic to low/high usage.
 THRESHOLD = 45000
@@ -469,7 +469,7 @@ def EdgeAnalysis(gr, num_blocks_report, known_edges_set):
         if gr[src][dst]['time'][-1] == 0:
             if gr[src][dst]['time'][-2] != 0:
                 if (src, dst) in known_edges_set:
-                    logger.info('Disconnected known connection: (%s,%s) in time: %s', src, dst,
+                    logger.info('Disconnected known connection: (%s,%s) in time: %s-UTC', src, dst,
                                 TimestampToStr('%Y-%m-%d %H:%M', gr[src][dst]['last_seen']))
                 else:
                     logger.anomaly('Disconnected unknown connection: (%s,%s) in time: %s', src, dst,
@@ -477,10 +477,10 @@ def EdgeAnalysis(gr, num_blocks_report, known_edges_set):
 
         elif gr[src][dst]['time'][-2] == 0:
             if (src, dst) in known_edges_set:
-                logger.info('Connected known connection (%s,%s) in time: %s', src, dst,
+                logger.info('Connected known connection (%s,%s) in time: %s-UTC', src, dst,
                             TimestampToStr('%Y-%m-%d %H:%M', gr[src][dst]['last_seen']))
             else:
-                logger.anomaly('Connected unknown connection (%s,%s) in time: %s', src, dst,
+                logger.anomaly('Connected unknown connection (%s,%s) in time: %s-UTC', src, dst,
                                TimestampToStr('%Y-%m-%d %H:%M', gr[src][dst]['last_seen']))
 
         if not 0 in gr[src][dst]['time'] and not gr[src][dst]['permanent_edge']:
@@ -602,17 +602,17 @@ def NodeAnalysis(gr, num_blocks_report, known_nodes_set):
         if gr.node[node_id]['time'][-1] == 0:
             if gr.node[node_id]['time'][-2] != 0:
                 if node_id in known_nodes_set:
-                    logger.info('Disconnected known IP address: %s in time: %s', node_id,
+                    logger.info('Disconnected known IP address: %s in time: %s-UTC', node_id,
                                 TimestampToStr('%Y-%m-%d %H:%M', gr.node[node_id]['last_seen']))
                 else:
-                    logger.anomaly('Disconnected unknown IP address: %s in time: %s', node_id,
+                    logger.anomaly('Disconnected unknown IP address: %s in time: %s-UTC', node_id,
                                    TimestampToStr('%Y-%m-%d %H:%M', gr.node[node_id]['last_seen']))
         elif gr.node[node_id]['time'][-2] == 0:
             if node_id in known_nodes_set:
-                logger.info('Connected known IP address: %s in time: %s', node_id,
+                logger.info('Connected known IP address: %s in time: %s-UTC', node_id,
                             TimestampToStr('%Y-%m-%d %H:%M', gr.node[node_id]['last_seen']))
             else:
-                logger.anomaly('Connected unknown IP address: %s in time: %s', node_id,
+                logger.anomaly('Connected unknown IP address: %s in time: %s-UTC', node_id,
                                TimestampToStr('%Y-%m-%d %H:%M', gr.node[node_id]['last_seen']))
 
         if not 0 in gr.node[node_id]['time'] and not gr.node[node_id]['permanent_addr']:
@@ -842,11 +842,11 @@ def QuietPeriodProcess(gr, threshold, change_period, quiet_period):
             all_quiet = False
 
     if all_peak and gr.graph['flow_count'][-1] < threshold and not quiet_period:
-        logger.anomaly('Low traffic period started with %s flows per five minutes in time %s',
+        logger.anomaly('Low traffic period started with %s flows per five minutes in time %s-UTC',
                        gr.graph['flow_count'][-1], TimestampToStr('%Y-%m-%d %H:%M', gr.graph['last_flow']))
         quiet_period = True
     elif all_quiet and gr.graph['flow_count'][-1] > threshold and quiet_period:
-        logger.anomaly('High traffic period started with %s flows per five minutes in time %s',
+        logger.anomaly('High traffic period started with %s flows per five minutes in time %s-UTC',
                        gr.graph['flow_count'][-1], TimestampToStr('%Y-%m-%d %H:%M', gr.graph['last_flow']))
         quiet_period = False
     return quiet_period
