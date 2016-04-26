@@ -24,7 +24,7 @@
 #  least in a way and scope that are comparable to the way and scope in which
 #  the source code of the Work is made available.
 #
-#  $Author:Tomas Vicher
+#  Author:Tomas Vicher
 #
 #  GraphFlow module for Nemea
 
@@ -38,6 +38,7 @@ import os.path
 sys.path.append(os.path.join(os.path.dirname(__file__), "..", "..", "..", "python"))
 sys.path.append("/home/tom/nemea/nemea-install/share/nemea-python/")
 sys.path.append("/usr/local/lib/python2.7/dist-packages/")
+
 import trap
 import unirec
 import networkx as nx
@@ -67,23 +68,11 @@ WEEK_AGGREGATION_PERIODS_COUNT = 7 * DAY_PERIODS_COUNT
 ##Number of periods in two weeks
 TWO_WEEK_AGGREGATION_PERIODS_COUNT = 2 * WEEK_AGGREGATION_PERIODS_COUNT
 
-##Number of periods with anomaly detected before report.
-NUM_PERIODS_REPORT = 3
-
 ##Length of period for graph plotting in hours.
 GRAPH_STRUCTURE_PLOT_INTERVAL_DAYS = 1
 
 ##Number of seconds in on period (length of time window in seconds).
 TIME_WINDOW_SECONDS = 60 * AGGREGATION_PERIOD_MINUTES
-
-##Size of batch of intervals to be prediceted in every new prediction event.
-PREDICTION_INTERVALS = 1
-
-##Decalaration of Holt-Winters deviation constatnt.
-HWT_SCALING_FACTOR = 3
-
-##Number of flows during one period dividing traffic to low/high usage.
-THRESHOLD = 45000
 
 ##Minimal number of flows during one period to detect anomaly.
 MINIMUM_FLOW_DETECTION_THRESHOLD = 100
@@ -91,12 +80,9 @@ MINIMUM_FLOW_DETECTION_THRESHOLD = 100
 ##Number of periods for change state of traffic. (low/high)
 TRAFFIC_STATE_CHANGE_PERIOD = 12
 
-##Parameters accepted by module to be processed.
-ALLOWED_PROPERTIES = ["PORT", "BYTES", "PACKETS", "DST_PORT", "SRC_PORT", "HTTP_RSP_CODE", "PROTOCOL", "TCP_FLAGS",
-                      "TTL", "TIME_FIRST", "TIME_LAST"]
-
 ##Initialization of graph structure
-gr = nx.DiGraph(flow_count=deque(), last_flow=0, prediction_count=PREDICTION_INTERVALS, detection_seq=0,
+prediction_intervals = 1
+gr = nx.DiGraph(flow_count=deque(), last_flow=0, prediction_count=prediction_intervals, detection_seq=0,
                 prediction_sum=0,
                 prediction_eval=0, values_last_sum=0, hwt_flow=deque(), hwt_flow_last=0,
                 hwt_params=[None, None, None, None],
@@ -114,28 +100,39 @@ setattr(logger, 'anomaly', lambda *args: logger.log(45, *args))
 from optparse import OptionParser
 
 parser = OptionParser(add_help_option=False)
+parser.add_option("-t", "--traffic-state-threshold",
+                  dest="threshold",type="float", default=100,
+                  help="Number of flows per 5 minute to change state low/high traffic.")
+parser.add_option("-d", "--detections-trigger",
+                  dest="num_periods_report",type="float", default=3,
+                  help="Number of detections before trigger alert.")
+parser.add_option("-c", "--scaling-factor",
+                  dest="scaling_factor",type="float", default=3,
+                  help="Set scaling factor for confidence bands in flow count prediction. Recommended value between 2 - 3.")
+parser.add_option("-u", "--no-structure-detect",
+                  action="store_true", dest="structure_detect", default=True,
+                  help="Disable detection of structure changes.")
 parser.add_option("-l", "--learning",
                   action="store_true", dest="learning", default=False,
                   help="Turns learning phase on and off. Choose True/False")
-parser.add_option("-p", "--properties",
-                  dest="properties", default=None,
-                  help="Set properties to be saved. Separated by comma. Its possible to choose from: " + str(
-                      ALLOWED_PROPERTIES))
 parser.add_option("-s", "--logger-severity",
                   dest="logger_severity", default="ANOMALY",
                   help="Set severity for logger from: info, debug, warning, error")
 parser.add_option("-w", "--whitelist-path",
                   dest="whitelist_file_path", default="whitelist.txt",
-                  help="List of known IP addresses. Default whitelist.txt.")
+                  help="List of known IP addresses. Default is actual module path.")
 parser.add_option("-r", "--ip-range",
                   dest="ip_range", default=None,
                   help="Set range of ip addresses in local network first ip-last ip ")
 parser.add_option("-g", "--plot-interval",
-                  dest="plot_interval",
+                  dest="plot_interval",type="int",
                   help="Set interval between plotting graphs in hours.")
 parser.add_option("-f", "--file-path", dest="file_path",
                   help="Set path of file to save data or load data. Path is relative from current path. If parameter is not set, default value is data/learned.json",
                   default="data/learned.json")
+parser.add_option("-o", "--output-path", dest="output_path",
+                  help="Set path to graphical output and graph export.",
+                  default="output")
 parser.add_option("-q", "--quiet",
                   action="store_false", dest="verbose", default=True,
                   help="don't print status messages to stdout")
@@ -152,8 +149,7 @@ def FlowProcess(gr):
     next_period = False
     UR_Flow = None
     plot_interval = 0
-    logger_severity, prop_array, ip_range, file_path, is_learning, plot_interval_periods, whitelist_file_path = ParseAdditionalParams(
-        parser)
+    logger_severity,  ip_range, file_path, is_learning, plot_interval_periods, whitelist_file_path, structure_detect, hwt_scaling_factor,num_periods_report, threshold,output_path = ParseAdditionalParams()
     LoggerInitialization(logger_severity)
     quiet_period = True
     known_nodes_set = set()
@@ -182,10 +178,10 @@ def FlowProcess(gr):
                     known_nodes_set = ImportWhitelist(whitelist_file_path,"node")
                     known_edges_set = ImportWhitelist(whitelist_file_path,"edge")
                     CleanGraph(gr)
-                    FlowAnalysis(gr, NUM_PERIODS_REPORT)
-                    NodeAnalysis(gr, NUM_PERIODS_REPORT, known_nodes_set)
-                    EdgeAnalysis(gr, NUM_PERIODS_REPORT, known_edges_set)
-                    quiet_period = QuietPeriodProcess(gr, THRESHOLD, TRAFFIC_STATE_CHANGE_PERIOD, quiet_period)
+                    FlowAnalysis(gr, num_periods_report, hwt_scaling_factor)
+                    NodeAnalysis(gr, num_periods_report, known_nodes_set, structure_detect, hwt_scaling_factor)
+                    EdgeAnalysis(gr, num_periods_report, known_edges_set, structure_detect, hwt_scaling_factor)
+                    quiet_period = QuietPeriodProcess(gr, threshold, TRAFFIC_STATE_CHANGE_PERIOD, quiet_period)
                     prediction_initialized = True
 
             if len(gr.graph['flow_count']) >= TWO_WEEK_AGGREGATION_PERIODS_COUNT and is_learning == True:
@@ -200,11 +196,11 @@ def FlowProcess(gr):
             # if not is_learning and plot_interval >= plot_interval_periods and plot_interval_periods is not None and TimestampToStr('%H', gr.graph['last_flow']) == "03" and TimestampToStr('%w', gr.graph['last_flow']) == "1":
             if not is_learning and plot_interval >= plot_interval_periods and plot_interval_periods is not None and TimestampToStr(
                     '%H', gr.graph['last_flow']) == "03":
-                PlotData(gr, False)
+                PlotData(gr,output_path, False)
                 plot_interval = 0
 
             gr, is_learning, next_period, stats_trigger, rec_buffer,known_edges_set,known_nodes_set = FillGraph(gr, rec, ip_range, is_learning,
-                                                                                prop_array, next_period,
+                                                                                next_period,
                                                                                 stats_trigger, rec_buffer, file_path,
                                                                                 known_nodes_set, known_edges_set,whitelist_file_path)
 
@@ -214,11 +210,11 @@ def FlowProcess(gr):
                 break
 
         for record in rec_buffer:
-            gr = AddRecord(record, gr, ip_range, next_period, is_learning)
+            gr = AddRecord(record, gr, ip_range, next_period)
             next_period = False
         if len(gr.graph['flow_count']) >= (TWO_WEEK_AGGREGATION_PERIODS_COUNT) and is_learning == True:
             ExportData(file_path)
-        PlotData(gr, True)
+        PlotData(gr,output_path, True)
     return gr
 
 
@@ -232,13 +228,13 @@ def CleanGraph(gr):
 
 
 def DataProcessInitialization(gr, known_nodes_set, known_edges_set, whitelist_file_path):
-    gr.graph['prediction_count'] = PREDICTION_INTERVALS
+    gr.graph['prediction_count'] = prediction_intervals
     for node_id in gr.nodes():
-        gr.node[node_id]['prediction_count'] = PREDICTION_INTERVALS
+        gr.node[node_id]['prediction_count'] = prediction_intervals
         if gr.node[node_id]['permanent_addr']:
             known_nodes_set.add(node_id)
     for src, dst in gr.edges():
-        gr[src][dst]['prediction_count'] = PREDICTION_INTERVALS
+        gr[src][dst]['prediction_count'] = prediction_intervals
         if gr[src][dst]['permanent_edge']:
             known_edges_set.add((src, dst))
     ExportWhitelist(gr,known_nodes_set, whitelist_file_path, "node")
@@ -278,7 +274,6 @@ def ImportWhitelist(whitelist_file_path,type):
     return processed_data
 
 def ExportWhitelist(gr,whitelist, whitelist_file_path, type):
-    whitelist_file_path_all = ""
     try:
         (filepath, filename) = os.path.split(whitelist_file_path)
         if type == "node":
@@ -314,7 +309,7 @@ def ExportWhitelist(gr,whitelist, whitelist_file_path, type):
 
 
 
-def PlotData(gr, is_total):
+def PlotData(gr,output_path, is_total):
     if is_total:
         prediction = "flow_prediction_list_total"
         measured = "measured_data_list_total"
@@ -328,7 +323,7 @@ def PlotData(gr, is_total):
     for src, dst in gr.edges():
         if gr.edge[src][dst]['permanent_edge']:
             print src, dst
-            img_path = "img/flow-" + src + "-" + dst + "/" + TimestampToStr('%Y-%m-%d %H:%M', gr.graph['last_flow'])
+            img_path = output_path+"/Connection-" + src + "-" + dst + "/" + TimestampToStr('%Y-%m-%d %H:%M', gr.graph['last_flow'])
             PlotFlow(gr[src][dst][prediction], gr[src][dst][measured], gr[src][dst][deviation], img_path,
                      gr.graph['last_flow'])
             gr.edge[src][dst][prediction] = deque()
@@ -338,14 +333,14 @@ def PlotData(gr, is_total):
     for ipaddr in gr.nodes():
         if gr.node[ipaddr]['permanent_addr']:
             print ipaddr
-            img_path = "img/ip-" + ipaddr + "/" + TimestampToStr('%Y-%m-%d %H:%M', gr.graph['last_flow'])
+            img_path = output_path+"/IP-" + ipaddr + "/" + TimestampToStr('%Y-%m-%d %H:%M', gr.graph['last_flow'])
             PlotFlow(gr.node[ipaddr][prediction], gr.node[ipaddr][measured], gr.node[ipaddr][deviation], img_path,
                      gr.graph['last_flow'])
             gr.node[ipaddr][prediction] = deque()
             gr.node[ipaddr][measured] = deque()
             gr.node[ipaddr][deviation] = deque()
 
-    img_path = "img/total/" + TimestampToStr('%Y-%m-%d %H:%M', gr.graph['last_flow'])
+    img_path = output_path+"/total/" + TimestampToStr('%Y-%m-%d %H:%M', gr.graph['last_flow'])
     PlotFlow(gr.graph[prediction], gr.graph[measured], gr.graph[deviation], img_path, gr.graph['last_flow'])
     PlotGraph(gr, img_path)
     gr.graph['flow_prediction_list'] = deque()
@@ -388,7 +383,7 @@ def PlotGraph(gr, img_path):
 
 
 def PlotFlow(flow_prediction_list, measured_data_list, deviation_list, img_path, last_flow):
-    plt.figure(None, (7, 5))
+    plt.figure(None, (8, 5))
     plt.rc('font', family='serif', size=14)
     plt.rc('legend', fontsize=14)
     # print flow_prediction_list, measured_data_list
@@ -411,6 +406,8 @@ def PlotFlow(flow_prediction_list, measured_data_list, deviation_list, img_path,
         plt.legend(loc='upper center', bbox_to_anchor=(0.5, 1.15),
                    fancybox=True, shadow=True, ncol=5)
         plt.gcf().autofmt_xdate()
+        ax = plt.gca()
+        ax.yaxis.set_label_coords(-0.122, 0.5)
         plt.ylabel('Numer of flows per 5 minutes')
         plt.savefig(str(img_path) + 'weekdemostration' + '.png')
         # plt.show()
@@ -464,28 +461,29 @@ def LoggerInitialization(logger_severity):
     logging.getLogger().setLevel(level)
 
 
-def EdgeAnalysis(gr, num_blocks_report, known_edges_set):
+def EdgeAnalysis(gr, num_blocks_report, known_edges_set, structure_detect, hwt_scaling_factor):
     for src, dst in gr.edges():
-        if gr[src][dst]['time'][-1] == 0:
-            if gr[src][dst]['time'][-2] != 0:
+        if structure_detect:
+            if gr[src][dst]['time'][-1] == 0:
+                if gr[src][dst]['time'][-2] != 0:
+                    if (src, dst) in known_edges_set:
+                        logger.info('Disconnected known connection: (%s,%s) in time: %s-UTC', src, dst,
+                                    TimestampToStr('%Y-%m-%d %H:%M', gr[src][dst]['last_seen']))
+                    else:
+                        logger.anomaly('Disconnected unknown connection: (%s,%s) in time: %s', src, dst,
+                                       TimestampToStr('%Y-%m-%d %H:%M', gr[src][dst]['last_seen']))
+
+            elif gr[src][dst]['time'][-2] == 0:
                 if (src, dst) in known_edges_set:
-                    logger.info('Disconnected known connection: (%s,%s) in time: %s-UTC', src, dst,
+                    logger.info('Connected known connection (%s,%s) in time: %s-UTC', src, dst,
                                 TimestampToStr('%Y-%m-%d %H:%M', gr[src][dst]['last_seen']))
                 else:
-                    logger.anomaly('Disconnected unknown connection: (%s,%s) in time: %s', src, dst,
+                    logger.anomaly('Connected unknown connection (%s,%s) in time: %s-UTC', src, dst,
                                    TimestampToStr('%Y-%m-%d %H:%M', gr[src][dst]['last_seen']))
-
-        elif gr[src][dst]['time'][-2] == 0:
-            if (src, dst) in known_edges_set:
-                logger.info('Connected known connection (%s,%s) in time: %s-UTC', src, dst,
-                            TimestampToStr('%Y-%m-%d %H:%M', gr[src][dst]['last_seen']))
-            else:
-                logger.anomaly('Connected unknown connection (%s,%s) in time: %s-UTC', src, dst,
-                               TimestampToStr('%Y-%m-%d %H:%M', gr[src][dst]['last_seen']))
 
         if not 0 in gr[src][dst]['time'] and not gr[src][dst]['permanent_edge']:
             gr[src][dst]['permanent_edge'] = True
-            gr[src][dst]['prediction_count'] = PREDICTION_INTERVALS
+            gr[src][dst]['prediction_count'] = prediction_intervals
             gr[src][dst]['hwt_edge'] = deque()
             logger.info('New regular connection: (%s,%s) in last 2 weeks before: %s', src, dst,
                         TimestampToStr('%Y-%m-%d %H:%M', gr[src][dst]['last_seen']))
@@ -513,7 +511,7 @@ def EdgeAnalysis(gr, num_blocks_report, known_edges_set):
                 gr[src][dst]['flow_prediction_list_total'].append(gr[src][dst]['hwt_edge'][current_prediction_count])
                 gr[src][dst]['measured_data_list_total'].append(gr[src][dst]['time'][-1])
                 if abs(gr[src][dst]['time'][-1] - gr[src][dst]['hwt_edge'][
-                    current_prediction_count]) > hwt_flow_deviation * HWT_SCALING_FACTOR:
+                    current_prediction_count]) > hwt_flow_deviation * hwt_scaling_factor:
                     # print "used edge deviation",hwt_flow_deviation
                     gr[src][dst]['detection_seq'] += 1
                     gr[src][dst]['prediction_sum'] += gr[src][dst]['hwt_edge'][current_prediction_count]
@@ -555,7 +553,7 @@ def EdgeAnalysis(gr, num_blocks_report, known_edges_set):
                     gr[src][dst]['values_last_sum'] = 0
             gr[src][dst]['prediction_count'] += 1
 
-            if gr[src][dst]['prediction_count'] >= PREDICTION_INTERVALS:
+            if gr[src][dst]['prediction_count'] >= prediction_intervals:
                 if len(gr[src][dst]['hwt_edge']) > 0:
                     gr[src][dst]['hwt_edge_last'] = gr[src][dst]['hwt_edge'][-1]
                 gr[src][dst]['prediction_count'] = 0
@@ -566,7 +564,7 @@ def EdgeAnalysis(gr, num_blocks_report, known_edges_set):
                         gr[src][dst]['hwt_edge'], gr[src][dst]['hwt_params'], _, gr[src][dst]['hwt_a'],gr[src][dst]['hwt_b'], gr[src][dst][
                             'hwt_s'], gr[src][dst]['hwt_s2'], gr[src][dst]['hwt_Y'] = hwt.HWT(
                             list(gr[src][dst]['time']), DAY_PERIODS_COUNT, WEEK_AGGREGATION_PERIODS_COUNT,
-                            PREDICTION_INTERVALS,
+                            prediction_intervals,
                             alpha=gr[src][dst]['hwt_params'][0], beta=gr[src][dst]['hwt_params'][1],
                             gamma=gr[src][dst]['hwt_params'][2], delta=gr[src][dst]['hwt_params'][3],
                             initial_values_optimization=[0.1, 0.1, 0.2, 0.2])
@@ -597,27 +595,28 @@ def EdgeAnalysis(gr, num_blocks_report, known_edges_set):
                                                     WEEK_AGGREGATION_PERIODS_COUNT, )
 
 
-def NodeAnalysis(gr, num_blocks_report, known_nodes_set):
+def NodeAnalysis(gr, num_blocks_report, known_nodes_set, structure_detect, hwt_scaling_factor):
     for node_id in gr.nodes():
-        if gr.node[node_id]['time'][-1] == 0:
-            if gr.node[node_id]['time'][-2] != 0:
+        if structure_detect:
+            if gr.node[node_id]['time'][-1] == 0:
+                if gr.node[node_id]['time'][-2] != 0:
+                    if node_id in known_nodes_set:
+                        logger.info('Disconnected known IP address: %s in time: %s-UTC', node_id,
+                                    TimestampToStr('%Y-%m-%d %H:%M', gr.node[node_id]['last_seen']))
+                    else:
+                        logger.anomaly('Disconnected unknown IP address: %s in time: %s-UTC', node_id,
+                                       TimestampToStr('%Y-%m-%d %H:%M', gr.node[node_id]['last_seen']))
+            elif gr.node[node_id]['time'][-2] == 0:
                 if node_id in known_nodes_set:
-                    logger.info('Disconnected known IP address: %s in time: %s-UTC', node_id,
+                    logger.info('Connected known IP address: %s in time: %s-UTC', node_id,
                                 TimestampToStr('%Y-%m-%d %H:%M', gr.node[node_id]['last_seen']))
                 else:
-                    logger.anomaly('Disconnected unknown IP address: %s in time: %s-UTC', node_id,
+                    logger.anomaly('Connected unknown IP address: %s in time: %s-UTC', node_id,
                                    TimestampToStr('%Y-%m-%d %H:%M', gr.node[node_id]['last_seen']))
-        elif gr.node[node_id]['time'][-2] == 0:
-            if node_id in known_nodes_set:
-                logger.info('Connected known IP address: %s in time: %s-UTC', node_id,
-                            TimestampToStr('%Y-%m-%d %H:%M', gr.node[node_id]['last_seen']))
-            else:
-                logger.anomaly('Connected unknown IP address: %s in time: %s-UTC', node_id,
-                               TimestampToStr('%Y-%m-%d %H:%M', gr.node[node_id]['last_seen']))
 
         if not 0 in gr.node[node_id]['time'] and not gr.node[node_id]['permanent_addr']:
             gr.node[node_id]['permanent_addr'] = True
-            gr.node[node_id]['prediction_count'] = PREDICTION_INTERVALS
+            gr.node[node_id]['prediction_count'] = prediction_intervals
             gr.node[node_id]['hwt_addr'] = deque()
             logger.info('New regular IP address: %s in last 2 weeks before:%s', node_id,
                         TimestampToStr('%Y-%m-%d %H:%M', gr.node[node_id]['last_seen']))
@@ -645,7 +644,7 @@ def NodeAnalysis(gr, num_blocks_report, known_nodes_set):
                     gr.node[node_id]['hwt_addr'][current_prediction_count])
                 gr.node[node_id]['measured_data_list_total'].append(gr.node[node_id]['time'][-1])
                 if abs(gr.node[node_id]['time'][-1] - gr.node[node_id]['hwt_addr'][
-                    current_prediction_count]) > hwt_flow_deviation * HWT_SCALING_FACTOR:
+                    current_prediction_count]) > hwt_flow_deviation * hwt_scaling_factor:
                     # print "used node deviation",hwt_flow_deviation
                     gr.node[node_id]['detection_seq'] += 1
                     gr.node[node_id]['prediction_sum'] += gr.node[node_id]['hwt_addr'][current_prediction_count]
@@ -689,7 +688,7 @@ def NodeAnalysis(gr, num_blocks_report, known_nodes_set):
                     gr.node[node_id]['values_last_sum'] = 0
                 gr.node[node_id]['prediction_count'] += 1
 
-            if gr.node[node_id]['prediction_count'] >= PREDICTION_INTERVALS:
+            if gr.node[node_id]['prediction_count'] >= prediction_intervals:
                 if len(gr.node[node_id]['hwt_addr']) > 0:
                     gr.node[node_id]['hwt_addr_last'] = gr.node[node_id]['hwt_addr'][-1]
                 gr.node[node_id]['prediction_count'] = 0
@@ -699,7 +698,7 @@ def NodeAnalysis(gr, num_blocks_report, known_nodes_set):
                         gr.node[node_id]['hwt_addr'], gr.node[node_id]['hwt_params'], _, gr.node[node_id]['hwt_a'], gr.node[node_id]['hwt_b'],\
                         gr.node[node_id]['hwt_s'], gr.node[node_id]['hwt_s2'], gr.node[node_id]['hwt_Y'] = hwt.HWT(
                             list(gr.node[node_id]['time']), DAY_PERIODS_COUNT, WEEK_AGGREGATION_PERIODS_COUNT,
-                            PREDICTION_INTERVALS,
+                            prediction_intervals,
                             alpha=gr.node[node_id]['hwt_params'][0], beta=gr.node[node_id]['hwt_params'][1], gamma=gr.node[node_id]['hwt_params'][2],
                             delta=gr.node[node_id]['hwt_params'][3],
                             initial_values_optimization=[0.1,0.1,  0.2, 0.2])
@@ -734,7 +733,7 @@ def NodeAnalysis(gr, num_blocks_report, known_nodes_set):
                                                                  WEEK_AGGREGATION_PERIODS_COUNT, )
 
 
-def FlowAnalysis(gr, num_blocks_report):
+def FlowAnalysis(gr, num_blocks_report, hwt_scaling_factor):
     if len(gr.graph['flow_count']) >= TWO_WEEK_AGGREGATION_PERIODS_COUNT:
         if len(gr.graph['hwt_flow']) > 0:
             current_prediction_count = gr.graph['prediction_count']
@@ -755,7 +754,7 @@ def FlowAnalysis(gr, num_blocks_report):
             gr.graph['measured_data_list_total'].append(gr.graph['flow_count'][-1])
 
             if abs(gr.graph['flow_count'][-1] - gr.graph['hwt_flow'][
-                current_prediction_count]) > hwt_flow_deviation * HWT_SCALING_FACTOR:
+                current_prediction_count]) > hwt_flow_deviation * hwt_scaling_factor:
                 # print "used flow deviation",hwt_flow_deviation
                 gr.graph['detection_seq'] += 1
                 gr.graph['prediction_sum'] += gr.graph['hwt_flow'][current_prediction_count]
@@ -792,7 +791,7 @@ def FlowAnalysis(gr, num_blocks_report):
                 gr.graph['values_last_sum'] = 0
             gr.graph['prediction_count'] += 1
 
-        if gr.graph['prediction_count'] >= PREDICTION_INTERVALS:
+        if gr.graph['prediction_count'] >= prediction_intervals:
             if len(gr.graph['hwt_flow']) > 0:
                 gr.graph['hwt_flow_last'] = gr.graph['hwt_flow'][-1]
             gr.graph['prediction_count'] = 0
@@ -803,7 +802,7 @@ def FlowAnalysis(gr, num_blocks_report):
                     print gr.graph['hwt_params']
                     gr.graph['hwt_flow'], gr.graph['hwt_params'], _, gr.graph['hwt_a'],gr.graph['hwt_b'], gr.graph['hwt_s'], gr.graph[
                         'hwt_s2'], gr.graph['hwt_Y'] = hwt.HWT(list(gr.graph['flow_count']), DAY_PERIODS_COUNT,
-                                                               WEEK_AGGREGATION_PERIODS_COUNT, PREDICTION_INTERVALS,
+                                                               WEEK_AGGREGATION_PERIODS_COUNT, prediction_intervals,
                                                                alpha=gr.graph['hwt_params'][0],
                                                                beta=gr.graph['hwt_params'][1],
                                                                gamma=gr.graph['hwt_params'][2],
@@ -865,19 +864,19 @@ def CheckIPRange(ip, ip_range):
     return ip
 
 
-def FillGraph(gr, rec, ip_range, is_learning, prop_array, next_period, stats_trigger, rec_buffer, file_path,
+def FillGraph(gr, rec, ip_range, is_learning, next_period, stats_trigger, rec_buffer, file_path,
               known_nodes_set, known_edges_set,whitelist_file_path):
     if next_period:
         stats_trigger += TIME_WINDOW_SECONDS
         for record in rec_buffer:
-            gr = AddRecord(record, gr, ip_range, next_period, is_learning)
+            gr = AddRecord(record, gr, ip_range, next_period)
             next_period = False
         rec_buffer = list()
         rec_buffer.append(rec)
     elif rec.TIME_LAST.getSec() > stats_trigger - TIME_WINDOW_SECONDS:
         rec_buffer.append(rec)
     elif rec.TIME_LAST.getSec() <= stats_trigger - TIME_WINDOW_SECONDS:
-        gr = AddRecord(rec, gr, ip_range, next_period, is_learning)
+        gr = AddRecord(rec, gr, ip_range, next_period)
         next_period = False
     return gr, is_learning, next_period, stats_trigger, rec_buffer,known_edges_set,known_nodes_set
 
@@ -898,7 +897,7 @@ def FillEdgeRecord(src_ip, dst_ip, rec, gr):
         gr[src_ip][dst_ip]['time'][-1] += 1
     else:
         gr.add_edge(src_ip, dst_ip, permanent_edge=False, detection_seq=0,
-                    prediction_count=PREDICTION_INTERVALS, hwt_edge=deque(), hwt_edge_last=0,
+                    prediction_count=prediction_intervals, hwt_edge=deque(), hwt_edge_last=0,
                     hwt_params=[None, None, None, None], values_last_sum=0, prediction_sum=0,
                     prediction_eval=0, last_seen=rec.TIME_LAST.getSec(), time=deque(), hwt_a=deque(), hwt_b=deque(), hwt_s=deque(),
                     hwt_s2=deque(), hwt_Y=deque(), hwt_deviation=deque(), flow_prediction_list=deque(),
@@ -915,7 +914,7 @@ def FillNodeRecord(ip, rec, gr):
         gr.node[ip]['last_seen'] = rec.TIME_LAST.getSec()
         gr.node[ip]['time'][-1] += 1
     else:
-        gr.add_node(ip, permanent_addr=False, detection_seq=0, prediction_count=PREDICTION_INTERVALS,
+        gr.add_node(ip, permanent_addr=False, detection_seq=0, prediction_count=prediction_intervals,
                     hwt_addr=deque(), hwt_addr_last=0, hwt_params=[None, None, None, None], values_last_sum=0,
                     prediction_sum=0, prediction_eval=0,
                     last_seen=rec.TIME_LAST.getSec(), time=deque(), hwt_a=deque(), hwt_b=deque(), hwt_s=deque(), hwt_s2=deque(),
@@ -957,7 +956,7 @@ def NextPeriodProcess(gr, next_period):
     return gr
 
 
-def AddRecord(rec, gr, ip_range, next_period, is_learning):
+def AddRecord(rec, gr, ip_range, next_period):
     src_ip = CheckIPRange(str(rec.SRC_IP), ip_range)
     dst_ip = CheckIPRange(str(rec.DST_IP), ip_range)
     gr = FillGraphRecord(gr, rec, next_period)
@@ -968,27 +967,25 @@ def AddRecord(rec, gr, ip_range, next_period, is_learning):
     return gr
 
 
-def ParseAdditionalParams(parser):
+def ParseAdditionalParams():
     options, args = parser.parse_args()
-    prop_array = None
-    properties = options.properties
     ip_range = options.ip_range
-    logger_severity = options.logger_severity.upper()
     plot_interval_periods = options.plot_interval
-    whitelist_file_path = options.whitelist_file_path
-    if properties is not None:
-        prop_array = properties.split(',')
 
     if ip_range is not None:
         ip_range = ip_range.split('-')
-        ip_range = list(ipaddress.summarize_address_range(ipaddress.ip_address(unicode(ip_range[0], "utf-8")),
+        try:
+            ip_range = list(ipaddress.summarize_address_range(ipaddress.ip_address(unicode(ip_range[0], "utf-8")),
                                                           ipaddress.ip_address(unicode(ip_range[1], "utf-8"))))
+        except:
+            print "Please insert IP range in IP1-IP2 format."
+            exit()
     if plot_interval_periods is not None:
         plot_interval_periods = DAY_PERIODS_COUNT * int(plot_interval_periods)
         if plot_interval_periods < HOUR_PERIODS_COUNT:
             plot_interval_periods = HOUR_PERIODS_COUNT
 
-    return logger_severity, prop_array, ip_range, options.file_path, options.learning, plot_interval_periods, whitelist_file_path
+    return options.logger_severity.upper(), ip_range, options.file_path, options.learning, plot_interval_periods, options.whitelist_file_path,options.structure_detect,options.scaling_factor,options.num_periods_report,options.threshold,options.output_path
 
 
 def ExportData(file_path="data"):
@@ -1195,7 +1192,7 @@ def ImportData(rec, file_path="data/learned.json"):
 
 module_info = trap.CreateModuleInfo(
     "GraphFlow",  # Module name
-    "Graph representation of local network",  # Description
+    "Module for network flow traffic analysis. Module detects anomaly in flow amount, detects connecting and disconnecting known and unknown IP addresses and connections between addresses, detects low/high flow traffic.",  # Description
     1,  # Number of input interfaces
     0,  # Number of output interfaces
     parser  # use previously defined OptionParser
