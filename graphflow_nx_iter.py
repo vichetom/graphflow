@@ -250,14 +250,14 @@ def ImportWhitelist(whitelist_file_path,type):
         elif type == "edge":
             whitelist_file_path = filepath + "Connection-" + filename
         else:
-            print "Specify node / edge to read."
+            print "Could not import whitelist. Starting with empty list."
             return list()
         if not os.path.exists(whitelist_file_path):
-            print "Could not find learned data, start with -l parameter first."
+            print "Could not import whitelist. Starting with empty list."
             return list()
         filehandle = open(str(whitelist_file_path), 'r')
     except:
-        print "Could not find learned data, start with -l parameter first.."
+        print "Could not import whitelist. Starting with empty list."
         return list()
 
     processed_data = set()
@@ -1080,20 +1080,17 @@ def TrimImportedData(gr,shift,list_to_shift,type):
                 gr[src][dst][parameter].rotate(shift)
 
 
-
-
-
 def ImportData(rec, file_path="data/learned.json"):
     print "Importing data"
     print file_path
     if not os.path.exists(file_path):
-        print "Could not find learned data, start with -l parameter first."
-        return
+        print "Could not find learned data, start with --learn or --file-path with path to learned data."
+        quit()
     try:
         filehandle = open(str(file_path), 'r')
     except:
-        print "Could not find learned data, start with -l parameter first.."
-        return
+        print "Could not find learned data, start with --learn or --file-path with path to learned data."
+        quit()
 
     data = json.loads(filehandle.read())
     graph = json_graph.node_link_graph(data, directed=True, multigraph=False,
