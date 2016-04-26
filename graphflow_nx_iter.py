@@ -481,7 +481,7 @@ def EdgeStructureChange(gr,src,dst,known_edges_set):
 
 def EdgeAnalysis(gr, num_blocks_report, known_edges_set, structure_detect, hwt_scaling_factor):
     for src, dst in gr.edges():
-        if structure_detect:
+        if not structure_detect:
             EdgeStructureChange(gr,src,dst,known_edges_set)
 
         if not 0 in gr[src][dst]['time'] and not gr[src][dst]['permanent_edge']:
@@ -599,7 +599,7 @@ def EdgeAnalysis(gr, num_blocks_report, known_edges_set, structure_detect, hwt_s
 
 def NodeAnalysis(gr, num_blocks_report, known_nodes_set, structure_detect, hwt_scaling_factor):
     for node_id in gr.nodes():
-        if structure_detect:
+        if not structure_detect:
             if gr.node[node_id]['time'][-1] == 0:
                 if gr.node[node_id]['time'][-2] != 0:
                     if node_id in known_nodes_set:
@@ -1203,11 +1203,16 @@ module_info = trap.CreateModuleInfo(
 
 def ModuleInitialization():
     # Initialize module
-    ifc_spec = trap.parseParams(sys.argv, module_info)
-    trap.init(module_info, ifc_spec)
-    trap.registerDefaultSignalHandler()  # This is needed to allow module termination using s SIGINT or SIGTERM signal
-    # this module accepts all UniRec fieds -> set required format:
-    trap.set_required_fmt(0, trap.TRAP_FMT_UNIREC, "")
+    try:
+        ifc_spec = trap.parseParams(sys.argv, module_info)
+        trap.init(module_info, ifc_spec)
+        trap.registerDefaultSignalHandler()  # This is needed to allow module termination using s SIGINT or SIGTERM signal
+        # this module accepts all UniRec fieds -> set required format:
+        trap.set_required_fmt(0, trap.TRAP_FMT_UNIREC, "")
+    except trap.EBadParams as e:
+        print e
+        quit()
+
 
 
 ModuleInitialization()
