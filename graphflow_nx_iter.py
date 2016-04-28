@@ -471,18 +471,17 @@ def EdgeStructureChange(gr,src,dst,known_edges_set):
                 logger.anomaly('Disconnected unknown connection: (%s,%s) in time: %s', src, dst,
                 TimestampToStr('%Y-%m-%d %H:%M', gr[src][dst]['last_seen']))
 
-        elif gr[src][dst]['time'][-2] == 0:
-            if (src, dst) in known_edges_set:
-                logger.info('Connected known connection (%s,%s) in time: %s-UTC', src, dst,
-                TimestampToStr('%Y-%m-%d %H:%M', gr[src][dst]['last_seen']))
-            else:
-                logger.anomaly('Connected unknown connection (%s,%s) in time: %s-UTC', src, dst,
+    elif gr[src][dst]['time'][-2] == 0:
+        if (src, dst) in known_edges_set:
+            logger.info('Connected known connection (%s,%s) in time: %s-UTC', src, dst,
+            TimestampToStr('%Y-%m-%d %H:%M', gr[src][dst]['last_seen']))
+        else:
+            logger.anomaly('Connected unknown connection (%s,%s) in time: %s-UTC', src, dst,
                                 TimestampToStr('%Y-%m-%d %H:%M', gr[src][dst]['last_seen']))
 
 def EdgeAnalysis(gr, num_blocks_report, known_edges_set, structure_detect, hwt_scaling_factor):
     for src, dst in gr.edges():
         if structure_detect:
-
             EdgeStructureChange(gr,src,dst,known_edges_set)
 
         if not 0 in gr[src][dst]['time'] and not gr[src][dst]['permanent_edge']:
