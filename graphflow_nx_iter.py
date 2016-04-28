@@ -117,7 +117,7 @@ parser.add_option("-l", "--learning",
                   help="Turns learning phase on and off. Choose True/False")
 parser.add_option("-s", "--logger-severity",
                   dest="logger_severity", default="ANOMALY",
-                  help="Set severity for logger from: info, debug, warning, error")
+                  help="Set severity for logger info or anomaly")
 parser.add_option("-w", "--whitelist-path",
                   dest="whitelist_file_path", default="whitelist.txt",
                   help="List of known IP addresses. Default is actual module path.")
@@ -481,7 +481,8 @@ def EdgeStructureChange(gr,src,dst,known_edges_set):
 
 def EdgeAnalysis(gr, num_blocks_report, known_edges_set, structure_detect, hwt_scaling_factor):
     for src, dst in gr.edges():
-        if not structure_detect:
+        if structure_detect:
+
             EdgeStructureChange(gr,src,dst,known_edges_set)
 
         if not 0 in gr[src][dst]['time'] and not gr[src][dst]['permanent_edge']:
@@ -599,7 +600,7 @@ def EdgeAnalysis(gr, num_blocks_report, known_edges_set, structure_detect, hwt_s
 
 def NodeAnalysis(gr, num_blocks_report, known_nodes_set, structure_detect, hwt_scaling_factor):
     for node_id in gr.nodes():
-        if not structure_detect:
+        if  structure_detect:
             if gr.node[node_id]['time'][-1] == 0:
                 if gr.node[node_id]['time'][-2] != 0:
                     if node_id in known_nodes_set:
@@ -973,6 +974,11 @@ def ParseAdditionalParams():
     options, args = parser.parse_args()
     ip_range = options.ip_range
     plot_interval_periods = options.plot_interval
+    severity = options.logger_severity.upper()
+
+    if severity != "INFO" and severity != "ANOMALY" and severity != None:
+        print "Wrong logger severity inserted, please insert info or anomaly."
+        quit()
 
     if ip_range is not None:
         ip_range = ip_range.split('-')
@@ -986,6 +992,7 @@ def ParseAdditionalParams():
         plot_interval_periods = DAY_PERIODS_COUNT * int(plot_interval_periods)
         if plot_interval_periods < HOUR_PERIODS_COUNT:
             plot_interval_periods = HOUR_PERIODS_COUNT
+
 
     return options.logger_severity.upper(), ip_range, options.file_path, options.learning, plot_interval_periods, options.whitelist_file_path,options.structure_detect,options.scaling_factor,options.num_periods_report,options.threshold,options.output_path
 
