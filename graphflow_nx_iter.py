@@ -74,7 +74,7 @@ GRAPH_STRUCTURE_PLOT_INTERVAL_DAYS = 1
 ##Number of seconds in on period (length of time window in seconds).
 TIME_WINDOW_SECONDS = 60 * AGGREGATION_PERIOD_MINUTES
 
-##Minimal number of flows during one period to detect anomaly.
+##Minimal number of flows during one period to flow count anomaly detection.
 MINIMUM_FLOW_DETECTION_THRESHOLD = 100
 
 ##Number of periods for change state of traffic. (low/high)
@@ -96,7 +96,7 @@ logging.addLevelName(45, "ANOMALY")
 logger = logging.getLogger(__name__)
 setattr(logger, 'anomaly', lambda *args: logger.log(45, *args))
 
-# Parses of module arguments
+## Parser of module arguments
 from optparse import OptionParser
 
 parser = OptionParser(add_help_option=False)
@@ -141,7 +141,7 @@ parser.add_option("-q", "--quiet",
 # ------------------------------------------------------
 
 
-
+## Function with main program loop
 
 def FlowProcess(gr):
     next_period_counter = 0
@@ -149,7 +149,7 @@ def FlowProcess(gr):
     next_period = False
     UR_Flow = None
     plot_interval = 0
-    logger_severity,  ip_range, file_path, is_learning, plot_interval_periods, whitelist_file_path, structure_detect, hwt_scaling_factor,num_periods_report, threshold,output_path = ParseAdditionalParams()
+    logger_severity,  ip_range, file_path, is_learning, plot_interval_periods, whitelist_file_path, structure_detect, hwt_scaling_factor,num_periods_report, threshold,output_path = ParseParams()
     LoggerInitialization(logger_severity)
     quiet_period = True
     known_nodes_set = set()
@@ -193,7 +193,6 @@ def FlowProcess(gr):
                 ExportData(file_path)
                 data_exported = True
 
-            # if not is_learning and plot_interval >= plot_interval_periods and plot_interval_periods is not None and TimestampToStr('%H', gr.graph['last_flow']) == "03" and TimestampToStr('%w', gr.graph['last_flow']) == "1":
             if not is_learning and plot_interval >= plot_interval_periods and plot_interval_periods is not None and TimestampToStr(
                     '%H', gr.graph['last_flow']) == "03":
                 PlotData(gr,output_path, False)
@@ -218,6 +217,8 @@ def FlowProcess(gr):
     return gr
 
 
+## Function cleans graph structure from unnecessary data
+
 def CleanGraph(gr):
     for node, data in gr.nodes(data=True):
         if all(v == 0 for v in data['time']):
@@ -226,6 +227,8 @@ def CleanGraph(gr):
 
     return gr
 
+
+## Function for initialization of graph structures on startup
 
 def DataProcessInitialization(gr, known_nodes_set, known_edges_set, whitelist_file_path):
     gr.graph['prediction_count'] = prediction_intervals
@@ -241,6 +244,8 @@ def DataProcessInitialization(gr, known_nodes_set, known_edges_set, whitelist_fi
     ExportWhitelist(gr,known_edges_set, whitelist_file_path, "edge")
     return known_nodes_set, known_edges_set
 
+
+## Function for importing known nodes and known edges from file.
 
 def ImportWhitelist(whitelist_file_path,type):
     try:
@@ -272,6 +277,9 @@ def ImportWhitelist(whitelist_file_path,type):
             else:
                 processed_data.add(unicode(tup))
     return processed_data
+
+
+## Function for exporting known nodes and known edges to whitelit files and all nodes and all edges to files on the end of learning period.
 
 def ExportWhitelist(gr,whitelist, whitelist_file_path, type):
     try:
@@ -308,6 +316,7 @@ def ExportWhitelist(gr,whitelist, whitelist_file_path, type):
 
 
 
+## Function for manage plotting and exporting flow count graphs and graph structure.
 
 def PlotData(gr,output_path, is_total):
     if is_total:
@@ -348,6 +357,8 @@ def PlotData(gr,output_path, is_total):
     gr.graph['deviation_list'] = deque()
 
 
+## Function for exporting graph structure
+
 def PlotGraph(gr, img_path):
     node_plot_list = []
     edge_plot_list = []
@@ -381,6 +392,7 @@ def PlotGraph(gr, img_path):
     plt.clf()
     plt.close()
 
+## Function for exporting flow count graphs
 
 def PlotFlow(flow_prediction_list, measured_data_list, deviation_list, img_path, last_flow):
     plt.figure(None, (8, 5))
@@ -430,6 +442,8 @@ def PlotFlow(flow_prediction_list, measured_data_list, deviation_list, img_path,
     print "plotting"
 
 
+## Function for loading data from interface
+
 def DataLoader(UR_Flow):
     try:
         data = trap.recv(0)
@@ -452,6 +466,8 @@ def DataLoader(UR_Flow):
     return UR_Flow(data), UR_Flow
 
 
+## Function for initialization logger severity and format
+
 def LoggerInitialization(logger_severity):
     handler = logging.FileHandler('graphflow.log' + str(datetime.datetime.now()))
     formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
@@ -461,6 +477,8 @@ def LoggerInitialization(logger_severity):
     logging.getLogger().setLevel(level)
 
 
+## Function detecting connect and disconnect of edge
+
 def EdgeStructureChange(gr,src,dst,known_edges_set):
     if gr[src][dst]['time'][-1] == 0:
         if gr[src][dst]['time'][-2] != 0:
@@ -468,7 +486,7 @@ def EdgeStructureChange(gr,src,dst,known_edges_set):
                 logger.info('Disconnected known connection: (%s,%s) in time: %s-UTC', src, dst,
                 TimestampToStr('%Y-%m-%d %H:%M', gr[src][dst]['last_seen']))
             else:
-                logger.anomaly('Disconnected unknown connection: (%s,%s) in time: %s', src, dst,
+                logger.anomaly('Disconnected unknown connection: (%s,%s) in time: %s-UTC', src, dst,
                 TimestampToStr('%Y-%m-%d %H:%M', gr[src][dst]['last_seen']))
 
     elif gr[src][dst]['time'][-2] == 0:
@@ -479,6 +497,9 @@ def EdgeStructureChange(gr,src,dst,known_edges_set):
             logger.anomaly('Connected unknown connection (%s,%s) in time: %s-UTC', src, dst,
                                 TimestampToStr('%Y-%m-%d %H:%M', gr[src][dst]['last_seen']))
 
+
+## Function for analysis of edge connections, disconnections and number of flow in time series
+
 def EdgeAnalysis(gr, num_blocks_report, known_edges_set, structure_detect, hwt_scaling_factor):
     for src, dst in gr.edges():
         if structure_detect:
@@ -488,11 +509,11 @@ def EdgeAnalysis(gr, num_blocks_report, known_edges_set, structure_detect, hwt_s
             gr[src][dst]['permanent_edge'] = True
             gr[src][dst]['prediction_count'] = prediction_intervals
             gr[src][dst]['hwt_edge'] = deque()
-            logger.info('New regular connection: (%s,%s) in last 2 weeks before: %s', src, dst,
+            logger.info('New regular connection: (%s,%s) in last 2 weeks before: %s-UTC', src, dst,
                         TimestampToStr('%Y-%m-%d %H:%M', gr[src][dst]['last_seen']))
         if 0 in gr[src][dst]['time'] and gr[src][dst]['permanent_edge']:
             gr[src][dst]['permanent_edge'] = False
-            logger.info('Regular connection: (%s,%s) disconected in last 2 weeks before: %s', src, dst,
+            logger.info('Regular connection: (%s,%s) disconected in last 2 weeks before: %s-UTC', src, dst,
                         TimestampToStr('%Y-%m-%d %H:%M', gr[src][dst]['last_seen']))
 
         if len(gr[src][dst]['time']) >= (TWO_WEEK_AGGREGATION_PERIODS_COUNT):
@@ -522,7 +543,7 @@ def EdgeAnalysis(gr, num_blocks_report, known_edges_set, structure_detect, hwt_s
                     if gr[src][dst]['detection_seq'] == num_blocks_report:
                         if int(gr[src][dst]['values_last_sum'] / num_blocks_report) > MINIMUM_FLOW_DETECTION_THRESHOLD:
                             logger.anomaly(
-                                'Connection (%s,%s) flows count: %s prediction: %s per %s miutes during last %s minutes before %s',
+                                'Connection (%s,%s) flows count: %s prediction: %s per %s miutes during last %s minutes before %s-UTC',
                                 src, dst,
                                 int(gr[src][dst]['values_last_sum'] / num_blocks_report),
                                 int(gr[src][dst]['prediction_sum'] / num_blocks_report),
@@ -597,9 +618,11 @@ def EdgeAnalysis(gr, num_blocks_report, known_edges_set, structure_detect, hwt_s
                                                     WEEK_AGGREGATION_PERIODS_COUNT, )
 
 
+## Function for analysis of node connections, disconnections and number of flow in time series
+
 def NodeAnalysis(gr, num_blocks_report, known_nodes_set, structure_detect, hwt_scaling_factor):
     for node_id in gr.nodes():
-        if  structure_detect:
+        if structure_detect:
             if gr.node[node_id]['time'][-1] == 0:
                 if gr.node[node_id]['time'][-2] != 0:
                     if node_id in known_nodes_set:
@@ -620,11 +643,11 @@ def NodeAnalysis(gr, num_blocks_report, known_nodes_set, structure_detect, hwt_s
             gr.node[node_id]['permanent_addr'] = True
             gr.node[node_id]['prediction_count'] = prediction_intervals
             gr.node[node_id]['hwt_addr'] = deque()
-            logger.info('New regular IP address: %s in last 2 weeks before:%s', node_id,
+            logger.info('New regular IP address: %s in last 2 weeks before:%s-UTC', node_id,
                         TimestampToStr('%Y-%m-%d %H:%M', gr.node[node_id]['last_seen']))
         if 0 in gr.node[node_id]['time'] and gr.node[node_id]['permanent_addr']:
             gr.node[node_id]['permanent_addr'] = False
-            logger.info('Disconnected regular IP address: %s in last 2 weeks before:%s', node_id,
+            logger.info('Disconnected regular IP address: %s in last 2 weeks before:%s-UTC', node_id,
                         TimestampToStr('%Y-%m-%d %H:%M', gr.node[node_id]['last_seen']))
 
         if len(gr.node[node_id]['time']) >= TWO_WEEK_AGGREGATION_PERIODS_COUNT:
@@ -655,7 +678,7 @@ def NodeAnalysis(gr, num_blocks_report, known_nodes_set, structure_detect, hwt_s
                         if int(gr.node[node_id][
                                    'values_last_sum'] / num_blocks_report) > MINIMUM_FLOW_DETECTION_THRESHOLD:
                             logger.anomaly(
-                                'IP %s flows count:%s prediction:%s per %s miutes during last %s minutes before %s',
+                                'IP %s flows count:%s prediction:%s per %s miutes during last %s minutes before %s-UTC',
                                 node_id,
                                 int(gr.node[node_id]['values_last_sum'] / num_blocks_report),
                                 int(gr.node[node_id]['prediction_sum'] / num_blocks_report),
@@ -735,6 +758,8 @@ def NodeAnalysis(gr, num_blocks_report, known_nodes_set, structure_detect, hwt_s
                                                                  WEEK_AGGREGATION_PERIODS_COUNT, )
 
 
+## Function for analysis of number of flows in time serises for whole network
+
 def FlowAnalysis(gr, num_blocks_report, hwt_scaling_factor):
     if len(gr.graph['flow_count']) >= TWO_WEEK_AGGREGATION_PERIODS_COUNT:
         if len(gr.graph['hwt_flow']) > 0:
@@ -764,7 +789,7 @@ def FlowAnalysis(gr, num_blocks_report, hwt_scaling_factor):
                 if gr.graph['detection_seq'] == num_blocks_report:
                     if int(gr.graph['values_last_sum'] / num_blocks_report) > MINIMUM_FLOW_DETECTION_THRESHOLD:
                         logger.anomaly(
-                            'Average flow count: %s, average prediction count: %s per %s miutes during last %s minutes before %s',
+                            'Average flow count: %s, average prediction count: %s per %s miutes during last %s minutes before %s-UTC',
                             int(gr.graph['values_last_sum'] / num_blocks_report),
                             int(gr.graph['prediction_sum'] / num_blocks_report),
                             AGGREGATION_PERIOD_MINUTES,
@@ -833,6 +858,9 @@ def FlowAnalysis(gr, num_blocks_report, hwt_scaling_factor):
                         DAY_PERIODS_COUNT, WEEK_AGGREGATION_PERIODS_COUNT, )
 
 
+
+## Function for detecting changes in state low / high network traffic
+
 def QuietPeriodProcess(gr, threshold, change_period, quiet_period):
     all_quiet = True
     all_peak = True
@@ -853,10 +881,13 @@ def QuietPeriodProcess(gr, threshold, change_period, quiet_period):
     return quiet_period
 
 
+## Time convert function
 
 def TimestampToStr(time_format, timestamp):
     return time.strftime(time_format, time.gmtime(timestamp))
 
+
+## Function for processing of ip range
 
 def CheckIPRange(ip, ip_range):
     if ip_range is not None:
@@ -865,6 +896,8 @@ def CheckIPRange(ip, ip_range):
 
     return ip
 
+
+## Function for processing new records by buffering
 
 def FillGraph(gr, rec, ip_range, is_learning, next_period, stats_trigger, rec_buffer, file_path,
               known_nodes_set, known_edges_set,whitelist_file_path):
@@ -883,6 +916,8 @@ def FillGraph(gr, rec, ip_range, is_learning, next_period, stats_trigger, rec_bu
     return gr, is_learning, next_period, stats_trigger, rec_buffer,known_edges_set,known_nodes_set
 
 
+## Function for filling time serie of flows for whole network
+
 def FillGraphRecord(gr, rec, next_period):
     if next_period or len(gr.graph['flow_count']) == 0:
         gr.graph['flow_count'].append(1)
@@ -892,6 +927,8 @@ def FillGraphRecord(gr, rec, next_period):
 
     return gr
 
+
+## Function for filling edge time series and variables
 
 def FillEdgeRecord(src_ip, dst_ip, rec, gr):
     if gr.has_edge(src_ip, dst_ip):
@@ -911,6 +948,8 @@ def FillEdgeRecord(src_ip, dst_ip, rec, gr):
     return gr
 
 
+## Function for filling node time series and variables
+
 def FillNodeRecord(ip, rec, gr):
     if gr.has_node(ip):
         gr.node[ip]['last_seen'] = rec.TIME_LAST.getSec()
@@ -929,6 +968,8 @@ def FillNodeRecord(ip, rec, gr):
 
     return gr
 
+
+## Function managing time series to pop left old vaues from time series.
 
 def NextPeriodProcess(gr, next_period):
     if next_period:
@@ -957,6 +998,7 @@ def NextPeriodProcess(gr, next_period):
 
     return gr
 
+## Function for adding new flow record to graph
 
 def AddRecord(rec, gr, ip_range, next_period):
     src_ip = CheckIPRange(str(rec.SRC_IP), ip_range)
@@ -969,7 +1011,9 @@ def AddRecord(rec, gr, ip_range, next_period):
     return gr
 
 
-def ParseAdditionalParams():
+## Function for parsing input script parameters
+
+def ParseParams():
     options, args = parser.parse_args()
     ip_range = options.ip_range
     plot_interval_periods = options.plot_interval
@@ -995,6 +1039,8 @@ def ParseAdditionalParams():
 
     return options.logger_severity.upper(), ip_range, options.file_path, options.learning, plot_interval_periods, options.whitelist_file_path,options.structure_detect,options.scaling_factor,options.num_periods_report,options.threshold,options.output_path
 
+
+## Function for exporting data to file on finishing of learning stage
 
 def ExportData(file_path="data"):
     print "Exporting data"
@@ -1074,6 +1120,8 @@ def ExportData(file_path="data"):
     filehandle.write(
         json.dumps(json_graph.node_link_data(gr_to_save), sort_keys=True, indent=2, separators=(',', ': ')))
 
+## Function for rotating imported time series data to fit currently processing data
+
 def TrimImportedData(gr,shift,list_to_shift,type):
     for parameter in list_to_shift:
         if type == "graph":
@@ -1085,6 +1133,8 @@ def TrimImportedData(gr,shift,list_to_shift,type):
             for src,dst in gr.edges():
                 gr[src][dst][parameter].rotate(shift)
 
+
+## Function for importing learned data
 
 def ImportData(rec, file_path="data/learned.json"):
     print "Importing data"
@@ -1204,6 +1254,8 @@ module_info = trap.CreateModuleInfo(
 )
 
 
+## Function for initialization data structures from Nemea
+
 def ModuleInitialization():
     # Initialize module
     try:
@@ -1217,6 +1269,7 @@ def ModuleInitialization():
         quit()
 
 
+## Starting module operation
 
 ModuleInitialization()
 gr = FlowProcess(gr)
