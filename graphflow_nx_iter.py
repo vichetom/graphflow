@@ -477,7 +477,7 @@ def LoggerInitialization(logger_severity):
     logging.getLogger().setLevel(level)
 
 
-## Function detecting connect and disconnect of edge
+## Function detecting of edge between two IP addresses connection and disconnection
 
 def EdgeStructureChange(gr,src,dst,known_edges_set):
     if gr[src][dst]['time'][-1] == 0:
@@ -617,28 +617,33 @@ def EdgeAnalysis(gr, num_blocks_report, known_edges_set, structure_detect, hwt_s
                                                     gr[src][dst]['hwt_params'][2], gr[src][dst]['hwt_params'][3], DAY_PERIODS_COUNT,
                                                     WEEK_AGGREGATION_PERIODS_COUNT, )
 
+## Function detecting of node connection and disconnection
+
+def NodeStructureChange (gr,node_id,known_nodes_set):
+    if gr.node[node_id]['time'][-1] == 0:
+        if gr.node[node_id]['time'][-2] != 0:
+            if node_id in known_nodes_set:
+                logger.info('Disconnected known IP address: %s in time: %s-UTC', node_id,
+                            TimestampToStr('%Y-%m-%d %H:%M', gr.node[node_id]['last_seen']))
+            else:
+                logger.anomaly('Disconnected unknown IP address: %s in time: %s-UTC', node_id,
+                               TimestampToStr('%Y-%m-%d %H:%M', gr.node[node_id]['last_seen']))
+    elif gr.node[node_id]['time'][-2] == 0:
+        if node_id in known_nodes_set:
+            logger.info('Connected known IP address: %s in time: %s-UTC', node_id,
+                        TimestampToStr('%Y-%m-%d %H:%M', gr.node[node_id]['last_seen']))
+        else:
+            logger.anomaly('Connected unknown IP address: %s in time: %s-UTC', node_id,
+                           TimestampToStr('%Y-%m-%d %H:%M', gr.node[node_id]['last_seen']))
+
+
 
 ## Function for analysis of node connections, disconnections and number of flow in time series
 
 def NodeAnalysis(gr, num_blocks_report, known_nodes_set, structure_detect, hwt_scaling_factor):
     for node_id in gr.nodes():
         if structure_detect:
-            if gr.node[node_id]['time'][-1] == 0:
-                if gr.node[node_id]['time'][-2] != 0:
-                    if node_id in known_nodes_set:
-                        logger.info('Disconnected known IP address: %s in time: %s-UTC', node_id,
-                                    TimestampToStr('%Y-%m-%d %H:%M', gr.node[node_id]['last_seen']))
-                    else:
-                        logger.anomaly('Disconnected unknown IP address: %s in time: %s-UTC', node_id,
-                                       TimestampToStr('%Y-%m-%d %H:%M', gr.node[node_id]['last_seen']))
-            elif gr.node[node_id]['time'][-2] == 0:
-                if node_id in known_nodes_set:
-                    logger.info('Connected known IP address: %s in time: %s-UTC', node_id,
-                                TimestampToStr('%Y-%m-%d %H:%M', gr.node[node_id]['last_seen']))
-                else:
-                    logger.anomaly('Connected unknown IP address: %s in time: %s-UTC', node_id,
-                                   TimestampToStr('%Y-%m-%d %H:%M', gr.node[node_id]['last_seen']))
-
+            NodeStructureChange(gr,node_id,known_nodes_set)
         if not 0 in gr.node[node_id]['time'] and not gr.node[node_id]['permanent_addr']:
             gr.node[node_id]['permanent_addr'] = True
             gr.node[node_id]['prediction_count'] = prediction_intervals
