@@ -171,6 +171,7 @@ def FlowProcess(gr):
                 next_period = True
                 next_period_counter += 1
                 print "period: ", next_period_counter
+                print rec.TIME_LAST.getSec(), stats_trigger
                 #print "next period", len(gr.nodes()),"nodes, ",len(gr.edges()),"edges"
                 if not is_learning:
                     if plot_interval_periods is not None:
@@ -1241,7 +1242,7 @@ def ImportData(rec, file_path="data/learned.json"):
                               'measured_data_list_total', 'deviation_list', 'deviation_list_total']
     TrimImportedData(graph, time_shift,list_to_shift,"edge")
     print "kontrola rotace", loaded_interval_index, current_interval_index, time_shift
-
+    print "last flow loaded", graph.graph['last_flow']
     graph.graph['last_flow'] = rec.TIME_LAST.getSec()
     for node_id in graph.nodes():
         graph.node[node_id]['last_seen'] = rec.TIME_LAST.getSec()
