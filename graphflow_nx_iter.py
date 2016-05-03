@@ -110,7 +110,7 @@ parser.add_option("-c", "--scaling-factor",
                   dest="scaling_factor",type="float", default=3,
                   help="Set scaling factor for confidence bands in flow count prediction. Recommended value between 2 - 3.")
 parser.add_option("-u", "--no-structure-detect",
-                  action="store_true", dest="structure_detect", default=True,
+                  action="store_false", dest="structure_detect", default=True,
                   help="Disable detection of structure changes.")
 parser.add_option("-l", "--learning",
                   action="store_true", dest="learning", default=False,
@@ -178,7 +178,7 @@ def FlowProcess(gr):
                     known_nodes_set = ImportWhitelist(whitelist_file_path,"node")
                     known_edges_set = ImportWhitelist(whitelist_file_path,"edge")
                     CleanGraph(gr)
-                    FlowAnalysis(gr, num_periods_report, hwt_scaling_factor)
+                    TotalFlowAnalysis(gr, num_periods_report, hwt_scaling_factor)
                     NodeAnalysis(gr, num_periods_report, known_nodes_set, structure_detect, hwt_scaling_factor)
                     EdgeAnalysis(gr, num_periods_report, known_edges_set, structure_detect, hwt_scaling_factor)
                     quiet_period = QuietPeriodProcess(gr, threshold, TRAFFIC_STATE_CHANGE_PERIOD, quiet_period)
@@ -765,7 +765,7 @@ def NodeAnalysis(gr, num_blocks_report, known_nodes_set, structure_detect, hwt_s
 
 ## Function for analysis of number of flows in time serises for whole network
 
-def FlowAnalysis(gr, num_blocks_report, hwt_scaling_factor):
+def TotalFlowAnalysis(gr, num_blocks_report, hwt_scaling_factor):
     if len(gr.graph['flow_count']) >= TWO_WEEK_AGGREGATION_PERIODS_COUNT:
         if len(gr.graph['hwt_flow']) > 0:
             current_prediction_count = gr.graph['prediction_count']
@@ -1023,7 +1023,7 @@ def ParseParams():
     ip_range = options.ip_range
     plot_interval_periods = options.plot_interval
     severity = options.logger_severity.upper()
-
+    print  options.structure_detect
     if severity != "INFO" and severity != "ANOMALY" and severity != None:
         print "Wrong logger severity inserted, please insert info or anomaly."
         quit()
@@ -1042,7 +1042,7 @@ def ParseParams():
             plot_interval_periods = HOUR_PERIODS_COUNT
 
 
-    return options.logger_severity.upper(), ip_range, options.file_path, options.learning, plot_interval_periods, options.whitelist_file_path,options.structure_detect,options.scaling_factor,options.num_periods_report,options.threshold,options.output_path
+    return options.logger_severity.upper(), ip_range, options.file_path, options.learning, plot_interval_periods, options.whitelist_file_path, options.structure_detect,options.scaling_factor,options.num_periods_report,options.threshold,options.output_path
 
 
 ## Function for exporting data to file on finishing of learning stage
