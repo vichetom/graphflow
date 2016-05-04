@@ -13,7 +13,7 @@ def HWT(x, m, m2, forecast, alpha=None, beta = None, gamma=None, delta=None, ini
         Y = train_series
         func = RMSE
         parameters = fmin_l_bfgs_b(func, x0=initial_values_optimization, args=(train_series, (m, m2), test_series),
-                                   bounds=boundaries, approx_grad=True)
+                                   bounds=boundaries, approx_grad=True, factr=10 ** 3)
         alpha, beta, gamma, delta = parameters[0]
         print parameters[0]
     a = [sum(Y[0:m]) / float(m)]
