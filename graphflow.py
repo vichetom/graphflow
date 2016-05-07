@@ -576,7 +576,7 @@ def EdgeAnalysis(gr, num_blocks_report, known_edges_set, structure_detect, hwt_s
                     gr[src][dst]['detection_seq'] = 0
                     gr[src][dst]['prediction_sum'] = 0
                     gr[src][dst]['values_last_sum'] = 0
-            gr[src][dst]['prediction_count'] += 1
+                gr[src][dst]['prediction_count'] += 1
 
             if gr[src][dst]['prediction_count'] >= prediction_intervals:
                 if len(gr[src][dst]['hwt_edge']) > 0:
@@ -736,9 +736,6 @@ def NodeAnalysis(gr, num_blocks_report, known_nodes_set, structure_detect, hwt_s
                         gr.node[node_id]['hwt_addr_last'] = gr.node[node_id]['hwt_addr'][-1]
                         gr.node[node_id]['hwt_deviation'].append(
                             abs(gr.node[node_id]['time'][-1] - gr.node[node_id]['hwt_addr'][-1]))
-
-
-
                     else:
 
                         if len(gr.node[node_id]['hwt_addr']) > 0:
