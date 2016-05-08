@@ -26,7 +26,7 @@
 #
 #  Author:Tomas Vicher
 #
-#  GraphFlow module for Nemea
+#  Graphflow module for NEMEA
 
 
 
@@ -149,7 +149,7 @@ def FlowProcess(gr):
     next_period = False
     UR_Flow = None
     plot_interval = 0
-    logger_severity,  ip_range, file_path, is_learning, plot_interval_periods, whitelist_file_path, structure_detect, hwt_scaling_factor,num_periods_report, threshold,output_path = ParseParams()
+    logger_severity,  ip_range, file_path, is_learning, plot_interval_periods, whitelist_file_path, structure_detect, hwt_scaling_factor,num_periods_report, threshold,output_path, verbose = ParseParams()
     LoggerInitialization(logger_severity)
     quiet_period = True
     known_nodes_set = set()
@@ -158,11 +158,14 @@ def FlowProcess(gr):
     data_exported = True
     ## Read data from input interface
     rec, UR_Flow = DataLoader(UR_Flow)
+    if not verbose:
+        print "Module started in quiet mode."
+        f = open(os.devnull, 'w')
+        sys.stdout = f
     if not rec == -1:
         stats_trigger = rec.TIME_LAST.getSec() - (rec.TIME_LAST.getSec() % 60) + (10 * 60)
         if not is_learning:
             gr = ImportData(rec, file_path)
-            print gr.graph['hwt_params']
 
             DataProcessInitialization(gr, known_nodes_set, known_edges_set, whitelist_file_path)
         ## Main loop (trap.stop is set to True when SIGINT or SIGTERM is received)
@@ -171,8 +174,6 @@ def FlowProcess(gr):
                 next_period = True
                 next_period_counter += 1
                 print "period: ", next_period_counter
-                print rec.TIME_LAST.getSec(), stats_trigger
-                #print "next period", len(gr.nodes()),"nodes, ",len(gr.edges()),"edges"
                 if not is_learning:
                     if plot_interval_periods is not None:
                         plot_interval += 1
@@ -332,7 +333,7 @@ def PlotData(gr,output_path, is_total):
 
     for src, dst in gr.edges():
         if gr.edge[src][dst]['permanent_edge']:
-            print src, dst
+            print "Exporting:", src, dst
             img_path = output_path+"/Connection-" + src + "-" + dst + "/" + TimestampToStr('%Y-%m-%d %H:%M', gr.graph['last_flow'])
             PlotFlow(gr[src][dst][prediction], gr[src][dst][measured], gr[src][dst][deviation], img_path,
                      gr.graph['last_flow'])
@@ -342,7 +343,7 @@ def PlotData(gr,output_path, is_total):
 
     for ipaddr in gr.nodes():
         if gr.node[ipaddr]['permanent_addr']:
-            print ipaddr
+            print "Exporting", ipaddr
             img_path = output_path+"/IP-" + ipaddr + "/" + TimestampToStr('%Y-%m-%d %H:%M', gr.graph['last_flow'])
             PlotFlow(gr.node[ipaddr][prediction], gr.node[ipaddr][measured], gr.node[ipaddr][deviation], img_path,
                      gr.graph['last_flow'])
@@ -384,7 +385,7 @@ def PlotGraph(gr, img_path):
                     break
         nx.draw_shell(gr, nodelist=node_plot_list, edgelist=edge_plot_list, font_color="c", arrows=True,
                       with_labels=True)
-        print str(img_path) + 'graph.pdf'
+        print "Exporting: ", str(img_path) + 'graph.gexf'
         nx.write_gexf(gr_to_export, str(img_path) + 'graph.gexf')
     except IOError:
         print "Can not write image data."
@@ -399,12 +400,9 @@ def PlotFlow(flow_prediction_list, measured_data_list, deviation_list, img_path,
     plt.figure(None, (8, 5))
     plt.rc('font', family='serif', size=14)
     plt.rc('legend', fontsize=14)
-    # print flow_prediction_list, measured_data_list
     time_list = [datetime.datetime.fromtimestamp(
         last_flow - len(flow_prediction_list) * TIME_WINDOW_SECONDS) + datetime.timedelta(
         minutes=i * AGGREGATION_PERIOD_MINUTES) for i in range(len(flow_prediction_list))]
-    # print len(time_list), len(measured_data_list)
-    # print time_list
     interval_low = []
     interval_high = []
     for dev, predicted_value in zip(deviation_list, flow_prediction_list):
@@ -440,7 +438,6 @@ def PlotFlow(flow_prediction_list, measured_data_list, deviation_list, img_path,
     plt.cla()
     plt.clf()
     plt.close()
-    print "plotting"
 
 
 ## Function for loading data from interface
@@ -537,7 +534,6 @@ def EdgeAnalysis(gr, num_blocks_report, known_edges_set, structure_detect, hwt_s
                 gr[src][dst]['measured_data_list_total'].append(gr[src][dst]['time'][-1])
                 if abs(gr[src][dst]['time'][-1] - gr[src][dst]['hwt_edge'][
                     current_prediction_count]) > hwt_flow_deviation * hwt_scaling_factor:
-                    # print "used edge deviation",hwt_flow_deviation
                     gr[src][dst]['detection_seq'] += 1
                     gr[src][dst]['prediction_sum'] += gr[src][dst]['hwt_edge'][current_prediction_count]
                     gr[src][dst]['values_last_sum'] += int(gr[src][dst]['time'][-1])
@@ -676,7 +672,6 @@ def NodeAnalysis(gr, num_blocks_report, known_nodes_set, structure_detect, hwt_s
                 gr.node[node_id]['measured_data_list_total'].append(gr.node[node_id]['time'][-1])
                 if abs(gr.node[node_id]['time'][-1] - gr.node[node_id]['hwt_addr'][
                     current_prediction_count]) > hwt_flow_deviation * hwt_scaling_factor:
-                    # print "used node deviation",hwt_flow_deviation
                     gr.node[node_id]['detection_seq'] += 1
                     gr.node[node_id]['prediction_sum'] += gr.node[node_id]['hwt_addr'][current_prediction_count]
                     gr.node[node_id]['values_last_sum'] += int(gr.node[node_id]['time'][-1])
@@ -785,7 +780,6 @@ def TotalFlowAnalysis(gr, num_blocks_report, hwt_scaling_factor):
 
             if abs(gr.graph['flow_count'][-1] - gr.graph['hwt_flow'][
                 current_prediction_count]) > hwt_flow_deviation * hwt_scaling_factor:
-                # print "used flow deviation",hwt_flow_deviation
                 gr.graph['detection_seq'] += 1
                 gr.graph['prediction_sum'] += gr.graph['hwt_flow'][current_prediction_count]
                 gr.graph['values_last_sum'] += int(gr.graph['flow_count'][-1])
@@ -805,8 +799,6 @@ def TotalFlowAnalysis(gr, num_blocks_report, hwt_scaling_factor):
                 gr.graph['hwt_b'].pop()
                 gr.graph['hwt_s'].pop()
                 gr.graph['hwt_s2'].pop()
-
-                # print len(gr.graph['hwt_flow']),len(gr.graph['hwt_a']),len(gr.graph['hwt_flow_last'])
                 gr.graph['hwt_flow'][-1], gr.graph['hwt_a'],gr.graph['hwt_b'], gr.graph['hwt_s'], gr.graph['hwt_s2'] = hwt.HWTStep(
                     gr.graph['hwt_flow_last'], gr.graph['hwt_a'],gr.graph['hwt_b'], gr.graph['hwt_s'], gr.graph['hwt_s2'],
                     gr.graph['hwt_params'][0], gr.graph['hwt_params'][1], gr.graph['hwt_params'][2], gr.graph['hwt_params'][3], DAY_PERIODS_COUNT,
@@ -828,8 +820,6 @@ def TotalFlowAnalysis(gr, num_blocks_report, hwt_scaling_factor):
             if 0 not in gr.graph['flow_count']:
                 if gr.graph['hwt_params'][0] is None or gr.graph['hwt_params'][1] is None or gr.graph['hwt_params'][
                     2] is None or gr.graph['hwt_params'][3] is None:
-                    print "predpocitani"
-                    print gr.graph['hwt_params']
                     gr.graph['hwt_flow'], gr.graph['hwt_params'], _, gr.graph['hwt_a'],gr.graph['hwt_b'], gr.graph['hwt_s'], gr.graph[
                         'hwt_s2'], gr.graph['hwt_Y'] = hwt.HWT(list(gr.graph['flow_count']), DAY_PERIODS_COUNT,
                                                                WEEK_AGGREGATION_PERIODS_COUNT, prediction_intervals,
@@ -1021,7 +1011,6 @@ def ParseParams():
     ip_range = options.ip_range
     plot_interval_periods = options.plot_interval
     severity = options.logger_severity.upper()
-    print  options.structure_detect
     if severity != "INFO" and severity != "ANOMALY" and severity != None:
         print "Wrong logger severity inserted, please insert info or anomaly."
         quit()
@@ -1040,7 +1029,7 @@ def ParseParams():
             plot_interval_periods = HOUR_PERIODS_COUNT
 
 
-    return options.logger_severity.upper(), ip_range, options.file_path, options.learning, plot_interval_periods, options.whitelist_file_path, options.structure_detect,options.scaling_factor,options.num_periods_report,options.threshold,options.output_path
+    return options.logger_severity.upper(), ip_range, options.file_path, options.learning, plot_interval_periods, options.whitelist_file_path, options.structure_detect,options.scaling_factor,options.num_periods_report,options.threshold,options.output_path,options.verbose
 
 
 ## Function for exporting data to file on finishing of learning stage
@@ -1052,7 +1041,6 @@ def ExportData(file_path="data"):
     gr_to_save.graph['hwt_flow'] = list()
     gr_to_save.graph['hwt_a'] = list(gr_to_save.graph['hwt_a'])
     gr_to_save.graph['hwt_b'] = list(gr_to_save.graph['hwt_b'])
-    print len(gr_to_save.graph['hwt_a'])
     gr_to_save.graph['hwt_s'] = list(gr_to_save.graph['hwt_s'])
     gr_to_save.graph['hwt_s2'] = list(gr_to_save.graph['hwt_s2'])
     gr_to_save.graph['hwt_Y'] = list(gr_to_save.graph['hwt_Y'])
@@ -1217,13 +1205,9 @@ def ImportData(rec, file_path="data/learned.json"):
     graph.graph['measured_data_list_total'] = deque()
     graph.graph['deviation_list'] = deque()
     graph.graph['deviation_list_total'] = deque()
-    # print graph.graph['last_flow'], rec.TIME_LAST.getSec()
     loaded_interval_index = (graph.graph['last_flow'] / (TIME_WINDOW_SECONDS)) % (WEEK_AGGREGATION_PERIODS_COUNT)
     current_interval_index = (rec.TIME_LAST.getSec() / (TIME_WINDOW_SECONDS)) % (WEEK_AGGREGATION_PERIODS_COUNT)
     time_shift = loaded_interval_index - current_interval_index
-    # print graph.graph['flow_count'][-1]
-
-    print "time shift", time_shift
     list_to_shift = ['flow_count', 'hwt_flow', 'hwt_a', 'hwt_b', 'hwt_s', 'hwt_s2', 'hwt_Y', 'hwt_deviation',
                           'flow_prediction_list',
                           'flow_prediction_list_total', 'measured_data_list', 'measured_data_list_total',
@@ -1238,8 +1222,6 @@ def ImportData(rec, file_path="data/learned.json"):
                               'flow_prediction_list', 'flow_prediction_list_total', 'measured_data_list',
                               'measured_data_list_total', 'deviation_list', 'deviation_list_total']
     TrimImportedData(graph, time_shift,list_to_shift,"edge")
-    print "kontrola rotace", loaded_interval_index, current_interval_index, time_shift
-    print "last flow loaded", graph.graph['last_flow']
     graph.graph['last_flow'] = rec.TIME_LAST.getSec()
     for node_id in graph.nodes():
         graph.node[node_id]['last_seen'] = rec.TIME_LAST.getSec()
