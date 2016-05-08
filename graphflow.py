@@ -295,7 +295,6 @@ def ExportWhitelist(gr,whitelist, whitelist_file_path, type):
         else:
             print "Specify node / edge to read."
             return
-        print filepath, filename
         if filepath:
             if not os.path.exists(filepath):
                 os.makedirs(filepath)
@@ -304,7 +303,6 @@ def ExportWhitelist(gr,whitelist, whitelist_file_path, type):
     except IOError:
         print "Can not write data."
         return
-    print gr.edges()
     if type == "edge":
         for item in whitelist:
             filehandle.write("(" + unicode(item[0]) + "," + unicode(item[1]) + ")" + ';')
