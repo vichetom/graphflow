@@ -90,7 +90,7 @@ gr = nx.DiGraph(flow_count=deque(), last_flow=0, prediction_count=prediction_int
                 flow_prediction_list=deque(),
                 flow_prediction_list_total=deque(),
                 measured_data_list=deque(), measured_data_list_total=deque(), deviation_list=deque(),
-                deviation_list_total=deque())
+                deviation_list_total=deque(),ip_range = None)
 
 logging.addLevelName(45, "ANOMALY")
 logger = logging.getLogger(__name__)
@@ -149,8 +149,8 @@ def FlowProcess(gr):
     next_period = False
     UR_Flow = None
     plot_interval = 0
-    logger_severity,  ip_range, file_path, is_learning, plot_interval_periods, whitelist_file_path, structure_detect, hwt_scaling_factor,num_periods_report, threshold,output_path, verbose = ParseParams()
-    LoggerInitialization(logger_severity)
+    logger_severity,  ip_range, ip_range_str, file_path, is_learning, plot_interval_periods, whitelist_file_path, structure_detect, hwt_scaling_factor,num_periods_report, threshold,output_path, verbose = ParseParams()
+    LoggerInitialization(logger_severity,output_path)
     quiet_period = True
     known_nodes_set = set()
     known_edges_set = set()
@@ -166,8 +166,13 @@ def FlowProcess(gr):
         stats_trigger = rec.TIME_LAST.getSec() - (rec.TIME_LAST.getSec() % 60) + (10 * 60)
         if not is_learning:
             gr = ImportData(rec, file_path)
-
             DataProcessInitialization(gr, known_nodes_set, known_edges_set, whitelist_file_path)
+            if gr.graph['ip_range'] is not None:
+                print "Using IP range from learned data: ", gr.graph['ip_range']
+                ip_range = IPtoIPRange(str(gr.graph['ip_range']))
+        else:
+            gr.graph['ip_range'] = ip_range_str
+
         ## Main loop (trap.stop is set to True when SIGINT or SIGTERM is received)
         while not trap.stop:
             if rec.TIME_LAST.getSec() > stats_trigger:
@@ -464,13 +469,22 @@ def DataLoader(UR_Flow):
 
 ## Function for initialization logger severity and format
 
-def LoggerInitialization(logger_severity):
-    handler = logging.FileHandler('graphflow.log' + str(datetime.datetime.now()))
-    formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
-    handler.setFormatter(formatter)
-    logger.addHandler(handler)
-    level = logging.getLevelName(logger_severity)
-    logging.getLogger().setLevel(level)
+def LoggerInitialization(logger_severity,output_path):
+    try:
+        if output_path:
+            if not os.path.exists(output_path):
+                os.makedirs(output_path)
+        handler = logging.FileHandler(output_path+'/graphflow.log' + str(datetime.datetime.now()))
+        formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+        handler.setFormatter(formatter)
+        logger.addHandler(handler)
+        level = logging.getLevelName(logger_severity)
+        logging.getLogger().setLevel(level)
+
+    except IOError:
+        print "Can not write data."
+        exit(0)
+
 
 
 ## Function detecting of edge between two IP addresses connection and disconnection
@@ -494,24 +508,74 @@ def EdgeStructureChange(gr,src,dst,known_edges_set):
                                 TimestampToStr('%Y-%m-%d %H:%M', gr[src][dst]['last_seen']))
 
 
+## Check for edges to be processed by Holt-Winters
+
+def CheckEdgePermanent(gr,src,dst,prediction_intervals):
+    if not 0 in gr[src][dst]['time'] and not gr[src][dst]['permanent_edge']:
+        gr[src][dst]['permanent_edge'] = True
+        gr[src][dst]['prediction_count'] = prediction_intervals
+        gr[src][dst]['hwt_edge'] = deque()
+        logger.info('New regular connection: (%s,%s) in last 2 weeks before: %s-UTC', src, dst,
+                    TimestampToStr('%Y-%m-%d %H:%M', gr[src][dst]['last_seen']))
+    if 0 in gr[src][dst]['time'] and gr[src][dst]['permanent_edge']:
+        gr[src][dst]['permanent_edge'] = False
+        logger.info('Regular connection: (%s,%s) disconected in last 2 weeks before: %s-UTC', src, dst,
+                    TimestampToStr('%Y-%m-%d %H:%M', gr[src][dst]['last_seen']))
+    return gr
+
+
+## Load Holt-Winters prediction on edges
+
+def EdgePerdictionProcess(gr,src,dst,prediction_intervals):
+    if gr[src][dst]['prediction_count'] >= prediction_intervals:
+        if len(gr[src][dst]['hwt_edge']) > 0:
+            gr[src][dst]['hwt_edge_last'] = gr[src][dst]['hwt_edge'][-1]
+        gr[src][dst]['prediction_count'] = 0
+        if gr[src][dst]['permanent_edge']:
+            if gr[src][dst]['hwt_params'][0] is None or gr[src][dst]['hwt_params'][1] is None or \
+                            gr[src][dst]['hwt_params'][2] is None or gr[src][dst]['hwt_params'][3] is None:
+                gr[src][dst]['hwt_edge'], gr[src][dst]['hwt_params'], _, gr[src][dst]['hwt_a'],gr[src][dst]['hwt_b'], gr[src][dst][
+                    'hwt_s'], gr[src][dst]['hwt_s2'], gr[src][dst]['hwt_Y'] = hwt.HWT(
+                    list(gr[src][dst]['time']), DAY_PERIODS_COUNT, WEEK_AGGREGATION_PERIODS_COUNT,
+                    prediction_intervals,
+                    alpha=gr[src][dst]['hwt_params'][0], beta=gr[src][dst]['hwt_params'][1],
+                    gamma=gr[src][dst]['hwt_params'][2], delta=gr[src][dst]['hwt_params'][3],
+                    initial_values_optimization=[0.1, 0.1, 0.2, 0.2])
+                gr[src][dst]['hwt_edge_last'] = gr[src][dst]['hwt_edge'][-1]
+                gr[src][dst]['hwt_deviation'].append(
+                    abs(gr[src][dst]['time'][-1] - gr[src][dst]['hwt_edge'][-1]))
+
+
+
+            else:
+                if len(gr[src][dst]['hwt_edge']) > 0:
+                    if len(gr[src][dst]['hwt_deviation']) >= WEEK_AGGREGATION_PERIODS_COUNT:
+                        gr[src][dst]['hwt_deviation'].append(abs((gr[src][dst]['hwt_params'][2] * (
+                            gr[src][dst]['time'][-1] - gr[src][dst]['hwt_edge'][-1])) + (
+                                                                     (1 - gr[src][dst]['hwt_params'][2]) *
+                                                                     gr[src][dst]['hwt_deviation'][
+                                                                         -WEEK_AGGREGATION_PERIODS_COUNT])))
+                    else:
+                        gr[src][dst]['hwt_deviation'].append(
+                            abs((gr[src][dst]['time'][-1] - gr[src][dst]['hwt_edge'][-1])))
+                if len(gr[src][dst]['hwt_edge']) == 0:
+                    gr[src][dst]['hwt_edge'].append(0)
+                gr[src][dst]['hwt_edge'][-1], gr[src][dst]['hwt_a'],gr[src][dst]['hwt_b'], gr[src][dst]['hwt_s'], gr[src][dst][
+                    'hwt_s2'] = hwt.HWTStep(gr[src][dst]['time'][-1], gr[src][dst]['hwt_a'], gr[src][dst]['hwt_b'],
+                                            gr[src][dst]['hwt_s'], gr[src][dst]['hwt_s2'],
+                                            gr[src][dst]['hwt_params'][0], gr[src][dst]['hwt_params'][1],
+                                            gr[src][dst]['hwt_params'][2], gr[src][dst]['hwt_params'][3], DAY_PERIODS_COUNT,
+                                            WEEK_AGGREGATION_PERIODS_COUNT, )
+    return gr
+
+
 ## Function for analysis of edge connections, disconnections and number of flow in time series
 
 def EdgeAnalysis(gr, num_blocks_report, known_edges_set, structure_detect, hwt_scaling_factor):
     for src, dst in gr.edges():
         if structure_detect:
             EdgeStructureChange(gr,src,dst,known_edges_set)
-
-        if not 0 in gr[src][dst]['time'] and not gr[src][dst]['permanent_edge']:
-            gr[src][dst]['permanent_edge'] = True
-            gr[src][dst]['prediction_count'] = prediction_intervals
-            gr[src][dst]['hwt_edge'] = deque()
-            logger.info('New regular connection: (%s,%s) in last 2 weeks before: %s-UTC', src, dst,
-                        TimestampToStr('%Y-%m-%d %H:%M', gr[src][dst]['last_seen']))
-        if 0 in gr[src][dst]['time'] and gr[src][dst]['permanent_edge']:
-            gr[src][dst]['permanent_edge'] = False
-            logger.info('Regular connection: (%s,%s) disconected in last 2 weeks before: %s-UTC', src, dst,
-                        TimestampToStr('%Y-%m-%d %H:%M', gr[src][dst]['last_seen']))
-
+        gr = CheckEdgePermanent(gr,src,dst,prediction_intervals)
         if len(gr[src][dst]['time']) >= (TWO_WEEK_AGGREGATION_PERIODS_COUNT):
             if len(gr[src][dst]['hwt_edge']) > 0 and gr[src][dst]['permanent_edge']:
 
@@ -571,46 +635,7 @@ def EdgeAnalysis(gr, num_blocks_report, known_edges_set, structure_detect, hwt_s
                     gr[src][dst]['prediction_sum'] = 0
                     gr[src][dst]['values_last_sum'] = 0
                 gr[src][dst]['prediction_count'] += 1
-
-            if gr[src][dst]['prediction_count'] >= prediction_intervals:
-                if len(gr[src][dst]['hwt_edge']) > 0:
-                    gr[src][dst]['hwt_edge_last'] = gr[src][dst]['hwt_edge'][-1]
-                gr[src][dst]['prediction_count'] = 0
-                if gr[src][dst]['permanent_edge']:
-                    if gr[src][dst]['hwt_params'][0] is None or gr[src][dst]['hwt_params'][1] is None or \
-                                    gr[src][dst]['hwt_params'][2] is None or gr[src][dst]['hwt_params'][3] is None:
-                        gr[src][dst]['hwt_edge'], gr[src][dst]['hwt_params'], _, gr[src][dst]['hwt_a'],gr[src][dst]['hwt_b'], gr[src][dst][
-                            'hwt_s'], gr[src][dst]['hwt_s2'], gr[src][dst]['hwt_Y'] = hwt.HWT(
-                            list(gr[src][dst]['time']), DAY_PERIODS_COUNT, WEEK_AGGREGATION_PERIODS_COUNT,
-                            prediction_intervals,
-                            alpha=gr[src][dst]['hwt_params'][0], beta=gr[src][dst]['hwt_params'][1],
-                            gamma=gr[src][dst]['hwt_params'][2], delta=gr[src][dst]['hwt_params'][3],
-                            initial_values_optimization=[0.1, 0.1, 0.2, 0.2])
-                        gr[src][dst]['hwt_edge_last'] = gr[src][dst]['hwt_edge'][-1]
-                        gr[src][dst]['hwt_deviation'].append(
-                            abs(gr[src][dst]['time'][-1] - gr[src][dst]['hwt_edge'][-1]))
-
-
-
-                    else:
-                        if len(gr[src][dst]['hwt_edge']) > 0:
-                            if len(gr[src][dst]['hwt_deviation']) >= WEEK_AGGREGATION_PERIODS_COUNT:
-                                gr[src][dst]['hwt_deviation'].append(abs((gr[src][dst]['hwt_params'][2] * (
-                                    gr[src][dst]['time'][-1] - gr[src][dst]['hwt_edge'][-1])) + (
-                                                                             (1 - gr[src][dst]['hwt_params'][2]) *
-                                                                             gr[src][dst]['hwt_deviation'][
-                                                                                 -WEEK_AGGREGATION_PERIODS_COUNT])))
-                            else:
-                                gr[src][dst]['hwt_deviation'].append(
-                                    abs((gr[src][dst]['time'][-1] - gr[src][dst]['hwt_edge'][-1])))
-                        if len(gr[src][dst]['hwt_edge']) == 0:
-                            gr[src][dst]['hwt_edge'].append(0)
-                        gr[src][dst]['hwt_edge'][-1], gr[src][dst]['hwt_a'],gr[src][dst]['hwt_b'], gr[src][dst]['hwt_s'], gr[src][dst][
-                            'hwt_s2'] = hwt.HWTStep(gr[src][dst]['time'][-1], gr[src][dst]['hwt_a'], gr[src][dst]['hwt_b'],
-                                                    gr[src][dst]['hwt_s'], gr[src][dst]['hwt_s2'],
-                                                    gr[src][dst]['hwt_params'][0], gr[src][dst]['hwt_params'][1],
-                                                    gr[src][dst]['hwt_params'][2], gr[src][dst]['hwt_params'][3], DAY_PERIODS_COUNT,
-                                                    WEEK_AGGREGATION_PERIODS_COUNT, )
+            gr = EdgePerdictionProcess(gr, src, dst, prediction_intervals)
 
 ## Function detecting of node connection and disconnection
 
@@ -633,23 +658,75 @@ def NodeStructureChange (gr,node_id,known_nodes_set):
 
 
 
+## Check for nodes to be processed by Holt-Winters
+
+def CheckNodePermanent (gr,node_id,prediction_intervals):
+    if not 0 in gr.node[node_id]['time'] and not gr.node[node_id]['permanent_addr']:
+        gr.node[node_id]['permanent_addr'] = True
+        gr.node[node_id]['prediction_count'] = prediction_intervals
+        gr.node[node_id]['hwt_addr'] = deque()
+        logger.info('New regular IP address: %s in last 2 weeks before:%s-UTC', node_id,
+                    TimestampToStr('%Y-%m-%d %H:%M', gr.node[node_id]['last_seen']))
+    if 0 in gr.node[node_id]['time'] and gr.node[node_id]['permanent_addr']:
+        gr.node[node_id]['permanent_addr'] = False
+        logger.info('Disconnected regular IP address: %s in last 2 weeks before:%s-UTC', node_id,
+                    TimestampToStr('%Y-%m-%d %H:%M', gr.node[node_id]['last_seen']))
+    return gr
+
+
+## Load Holt-Winters prediction on nodes
+
+def NodePerdictionProcess(gr,node_id,prediction_intervals):
+    if gr.node[node_id]['prediction_count'] >= prediction_intervals:
+        if len(gr.node[node_id]['hwt_addr']) > 0:
+            gr.node[node_id]['hwt_addr_last'] = gr.node[node_id]['hwt_addr'][-1]
+        gr.node[node_id]['prediction_count'] = 0
+        if gr.node[node_id]['permanent_addr'] == True:
+            if gr.node[node_id]['hwt_params'][0] is None or gr.node[node_id]['hwt_params'][1] is None or \
+                            gr.node[node_id]['hwt_params'][2] is None or gr.node[node_id]['hwt_params'][3] is None:
+                gr.node[node_id]['hwt_addr'], gr.node[node_id]['hwt_params'], _, gr.node[node_id]['hwt_a'], gr.node[node_id]['hwt_b'],\
+                gr.node[node_id]['hwt_s'], gr.node[node_id]['hwt_s2'], gr.node[node_id]['hwt_Y'] = hwt.HWT(
+                    list(gr.node[node_id]['time']), DAY_PERIODS_COUNT, WEEK_AGGREGATION_PERIODS_COUNT,
+                    prediction_intervals,
+                    alpha=gr.node[node_id]['hwt_params'][0], beta=gr.node[node_id]['hwt_params'][1], gamma=gr.node[node_id]['hwt_params'][2],
+                    delta=gr.node[node_id]['hwt_params'][3],
+                    initial_values_optimization=[0.1,0.1,  0.2, 0.2])
+                gr.node[node_id]['hwt_addr_last'] = gr.node[node_id]['hwt_addr'][-1]
+                gr.node[node_id]['hwt_deviation'].append(
+                    abs(gr.node[node_id]['time'][-1] - gr.node[node_id]['hwt_addr'][-1]))
+            else:
+
+                if len(gr.node[node_id]['hwt_addr']) > 0:
+                    if len(gr.node[node_id]['hwt_deviation']) >= WEEK_AGGREGATION_PERIODS_COUNT:
+                        gr.node[node_id]['hwt_deviation'].append(abs((gr.node[node_id]['hwt_params'][2] * (
+                            gr.node[node_id]['time'][-1] - gr.node[node_id]['hwt_addr'][-1])) + (
+                                                                         (1 - gr.node[node_id]['hwt_params'][2])
+                                                                         * gr.node[node_id]['hwt_deviation'][
+                                                                             -WEEK_AGGREGATION_PERIODS_COUNT])))
+                    else:
+                        gr.node[node_id]['hwt_deviation'].append(
+                            abs((gr.node[node_id]['time'][-1] - gr.node[node_id]['hwt_addr'][-1])))
+                if len(gr.node[node_id]['hwt_addr']) == 0:
+                    gr.node[node_id]['hwt_addr'].append(0)
+                gr.node[node_id]['hwt_addr'][-1], gr.node[node_id]['hwt_a'],gr.node[node_id]['hwt_b'], gr.node[node_id]['hwt_s'], \
+                gr.node[node_id]['hwt_s2'] = hwt.HWTStep(gr.node[node_id]['time'][-1],
+                                                         gr.node[node_id]['hwt_a'],gr.node[node_id]['hwt_b'], gr.node[node_id]['hwt_s'],
+                                                         gr.node[node_id]['hwt_s2'],
+                                                         gr.node[node_id]['hwt_params'][0],
+                                                         gr.node[node_id]['hwt_params'][1],
+                                                         gr.node[node_id]['hwt_params'][2],
+                                                         gr.node[node_id]['hwt_params'][3],DAY_PERIODS_COUNT,
+                                                         WEEK_AGGREGATION_PERIODS_COUNT, )
+    return gr
+
+
 ## Function for analysis of node connections, disconnections and number of flow in time series
 
 def NodeAnalysis(gr, num_blocks_report, known_nodes_set, structure_detect, hwt_scaling_factor):
     for node_id in gr.nodes():
         if structure_detect:
             NodeStructureChange(gr,node_id,known_nodes_set)
-        if not 0 in gr.node[node_id]['time'] and not gr.node[node_id]['permanent_addr']:
-            gr.node[node_id]['permanent_addr'] = True
-            gr.node[node_id]['prediction_count'] = prediction_intervals
-            gr.node[node_id]['hwt_addr'] = deque()
-            logger.info('New regular IP address: %s in last 2 weeks before:%s-UTC', node_id,
-                        TimestampToStr('%Y-%m-%d %H:%M', gr.node[node_id]['last_seen']))
-        if 0 in gr.node[node_id]['time'] and gr.node[node_id]['permanent_addr']:
-            gr.node[node_id]['permanent_addr'] = False
-            logger.info('Disconnected regular IP address: %s in last 2 weeks before:%s-UTC', node_id,
-                        TimestampToStr('%Y-%m-%d %H:%M', gr.node[node_id]['last_seen']))
-
+        gr = CheckNodePermanent(gr,node_id,prediction_intervals)
         if len(gr.node[node_id]['time']) >= TWO_WEEK_AGGREGATION_PERIODS_COUNT:
             if len(gr.node[node_id]['hwt_addr']) > 0 and gr.node[node_id]['permanent_addr'] == True:
                 if len(gr.node[node_id]['hwt_deviation']) >= WEEK_AGGREGATION_PERIODS_COUNT:
@@ -712,46 +789,49 @@ def NodeAnalysis(gr, num_blocks_report, known_nodes_set, structure_detect, hwt_s
                     gr.node[node_id]['values_last_sum'] = 0
                 gr.node[node_id]['prediction_count'] += 1
 
-            if gr.node[node_id]['prediction_count'] >= prediction_intervals:
-                if len(gr.node[node_id]['hwt_addr']) > 0:
-                    gr.node[node_id]['hwt_addr_last'] = gr.node[node_id]['hwt_addr'][-1]
-                gr.node[node_id]['prediction_count'] = 0
-                if gr.node[node_id]['permanent_addr'] == True:
-                    if gr.node[node_id]['hwt_params'][0] is None or gr.node[node_id]['hwt_params'][1] is None or \
-                                    gr.node[node_id]['hwt_params'][2] is None or gr.node[node_id]['hwt_params'][3] is None:
-                        gr.node[node_id]['hwt_addr'], gr.node[node_id]['hwt_params'], _, gr.node[node_id]['hwt_a'], gr.node[node_id]['hwt_b'],\
-                        gr.node[node_id]['hwt_s'], gr.node[node_id]['hwt_s2'], gr.node[node_id]['hwt_Y'] = hwt.HWT(
-                            list(gr.node[node_id]['time']), DAY_PERIODS_COUNT, WEEK_AGGREGATION_PERIODS_COUNT,
-                            prediction_intervals,
-                            alpha=gr.node[node_id]['hwt_params'][0], beta=gr.node[node_id]['hwt_params'][1], gamma=gr.node[node_id]['hwt_params'][2],
-                            delta=gr.node[node_id]['hwt_params'][3],
-                            initial_values_optimization=[0.1,0.1,  0.2, 0.2])
-                        gr.node[node_id]['hwt_addr_last'] = gr.node[node_id]['hwt_addr'][-1]
-                        gr.node[node_id]['hwt_deviation'].append(
-                            abs(gr.node[node_id]['time'][-1] - gr.node[node_id]['hwt_addr'][-1]))
-                    else:
+            gr = NodePerdictionProcess(gr,node_id,prediction_intervals)
 
-                        if len(gr.node[node_id]['hwt_addr']) > 0:
-                            if len(gr.node[node_id]['hwt_deviation']) >= WEEK_AGGREGATION_PERIODS_COUNT:
-                                gr.node[node_id]['hwt_deviation'].append(abs((gr.node[node_id]['hwt_params'][2] * (
-                                    gr.node[node_id]['time'][-1] - gr.node[node_id]['hwt_addr'][-1])) + (
-                                                                                 (1 - gr.node[node_id]['hwt_params'][2])
-                                                                                 * gr.node[node_id]['hwt_deviation'][
-                                                                                     -WEEK_AGGREGATION_PERIODS_COUNT])))
-                            else:
-                                gr.node[node_id]['hwt_deviation'].append(
-                                    abs((gr.node[node_id]['time'][-1] - gr.node[node_id]['hwt_addr'][-1])))
-                        if len(gr.node[node_id]['hwt_addr']) == 0:
-                            gr.node[node_id]['hwt_addr'].append(0)
-                        gr.node[node_id]['hwt_addr'][-1], gr.node[node_id]['hwt_a'],gr.node[node_id]['hwt_b'], gr.node[node_id]['hwt_s'], \
-                        gr.node[node_id]['hwt_s2'] = hwt.HWTStep(gr.node[node_id]['time'][-1],
-                                                                 gr.node[node_id]['hwt_a'],gr.node[node_id]['hwt_b'], gr.node[node_id]['hwt_s'],
-                                                                 gr.node[node_id]['hwt_s2'],
-                                                                 gr.node[node_id]['hwt_params'][0],
-                                                                 gr.node[node_id]['hwt_params'][1],
-                                                                 gr.node[node_id]['hwt_params'][2],
-                                                                 gr.node[node_id]['hwt_params'][3],DAY_PERIODS_COUNT,
-                                                                 WEEK_AGGREGATION_PERIODS_COUNT, )
+
+## Load Holt-Winters prediction on total flows
+
+def TotalFlowPerdictionProcess(gr,prediction_intervals):
+    if gr.graph['prediction_count'] >= prediction_intervals:
+        if len(gr.graph['hwt_flow']) > 0:
+            gr.graph['hwt_flow_last'] = gr.graph['hwt_flow'][-1]
+        gr.graph['prediction_count'] = 0
+        if 0 not in gr.graph['flow_count']:
+            if gr.graph['hwt_params'][0] is None or gr.graph['hwt_params'][1] is None or gr.graph['hwt_params'][
+                2] is None or gr.graph['hwt_params'][3] is None:
+                gr.graph['hwt_flow'], gr.graph['hwt_params'], _, gr.graph['hwt_a'],gr.graph['hwt_b'], gr.graph['hwt_s'], gr.graph[
+                    'hwt_s2'], gr.graph['hwt_Y'] = hwt.HWT(list(gr.graph['flow_count']), DAY_PERIODS_COUNT,
+                                                           WEEK_AGGREGATION_PERIODS_COUNT, prediction_intervals,
+                                                           alpha=gr.graph['hwt_params'][0],
+                                                           beta=gr.graph['hwt_params'][1],
+                                                           gamma=gr.graph['hwt_params'][2],
+                                                           delta=gr.graph['hwt_params'][3],
+                                                           initial_values_optimization=[0.5, 0.5,0.5, 0.5])
+
+                gr.graph['hwt_flow_last'] = gr.graph['hwt_flow'][-1]
+                gr.graph['hwt_deviation'].append(abs(gr.graph['flow_count'][-1] - gr.graph['hwt_flow'][-1]))
+
+
+            else:
+                if len(gr.graph['hwt_flow']) > 0:
+                    if len(gr.graph['hwt_deviation']) >= WEEK_AGGREGATION_PERIODS_COUNT:
+                        gr.graph['hwt_deviation'].append(abs((gr.graph['hwt_params'][2] * (
+                            gr.graph['flow_count'][-1] - gr.graph['hwt_flow'][-1])) + (
+                                                             (1 - gr.graph['hwt_params'][2]) *
+                                                             gr.graph['hwt_deviation'][
+                                                                 -WEEK_AGGREGATION_PERIODS_COUNT])))
+                    else:
+                        gr.graph['hwt_deviation'].append(abs(gr.graph['flow_count'][-1] - gr.graph['hwt_flow'][-1]))
+                if len(gr.graph['hwt_flow']) == 0:
+                    gr.graph['hwt_flow'].append(0)
+                gr.graph['hwt_flow'][-1], gr.graph['hwt_a'],gr.graph['hwt_b'], gr.graph['hwt_s'], gr.graph['hwt_s2'] = hwt.HWTStep(
+                    gr.graph['flow_count'][-1], gr.graph['hwt_a'],gr.graph['hwt_b'], gr.graph['hwt_s'], gr.graph['hwt_s2'],
+                    gr.graph['hwt_params'][0], gr.graph['hwt_params'][1], gr.graph['hwt_params'][2], gr.graph['hwt_params'][3],
+                    DAY_PERIODS_COUNT, WEEK_AGGREGATION_PERIODS_COUNT, )
+
 
 
 ## Function for analysis of number of flows in time serises for whole network
@@ -810,43 +890,7 @@ def TotalFlowAnalysis(gr, num_blocks_report, hwt_scaling_factor):
                 gr.graph['prediction_sum'] = 0
                 gr.graph['values_last_sum'] = 0
             gr.graph['prediction_count'] += 1
-
-        if gr.graph['prediction_count'] >= prediction_intervals:
-            if len(gr.graph['hwt_flow']) > 0:
-                gr.graph['hwt_flow_last'] = gr.graph['hwt_flow'][-1]
-            gr.graph['prediction_count'] = 0
-            if 0 not in gr.graph['flow_count']:
-                if gr.graph['hwt_params'][0] is None or gr.graph['hwt_params'][1] is None or gr.graph['hwt_params'][
-                    2] is None or gr.graph['hwt_params'][3] is None:
-                    gr.graph['hwt_flow'], gr.graph['hwt_params'], _, gr.graph['hwt_a'],gr.graph['hwt_b'], gr.graph['hwt_s'], gr.graph[
-                        'hwt_s2'], gr.graph['hwt_Y'] = hwt.HWT(list(gr.graph['flow_count']), DAY_PERIODS_COUNT,
-                                                               WEEK_AGGREGATION_PERIODS_COUNT, prediction_intervals,
-                                                               alpha=gr.graph['hwt_params'][0],
-                                                               beta=gr.graph['hwt_params'][1],
-                                                               gamma=gr.graph['hwt_params'][2],
-                                                               delta=gr.graph['hwt_params'][3],
-                                                               initial_values_optimization=[0.5, 0.5,0.5, 0.5])
-
-                    gr.graph['hwt_flow_last'] = gr.graph['hwt_flow'][-1]
-                    gr.graph['hwt_deviation'].append(abs(gr.graph['flow_count'][-1] - gr.graph['hwt_flow'][-1]))
-
-
-                else:
-                    if len(gr.graph['hwt_flow']) > 0:
-                        if len(gr.graph['hwt_deviation']) >= WEEK_AGGREGATION_PERIODS_COUNT:
-                            gr.graph['hwt_deviation'].append(abs((gr.graph['hwt_params'][2] * (
-                                gr.graph['flow_count'][-1] - gr.graph['hwt_flow'][-1])) + (
-                                                                 (1 - gr.graph['hwt_params'][2]) *
-                                                                 gr.graph['hwt_deviation'][
-                                                                     -WEEK_AGGREGATION_PERIODS_COUNT])))
-                        else:
-                            gr.graph['hwt_deviation'].append(abs(gr.graph['flow_count'][-1] - gr.graph['hwt_flow'][-1]))
-                    if len(gr.graph['hwt_flow']) == 0:
-                        gr.graph['hwt_flow'].append(0)
-                    gr.graph['hwt_flow'][-1], gr.graph['hwt_a'],gr.graph['hwt_b'], gr.graph['hwt_s'], gr.graph['hwt_s2'] = hwt.HWTStep(
-                        gr.graph['flow_count'][-1], gr.graph['hwt_a'],gr.graph['hwt_b'], gr.graph['hwt_s'], gr.graph['hwt_s2'],
-                        gr.graph['hwt_params'][0], gr.graph['hwt_params'][1], gr.graph['hwt_params'][2], gr.graph['hwt_params'][3],
-                        DAY_PERIODS_COUNT, WEEK_AGGREGATION_PERIODS_COUNT, )
+        TotalFlowPerdictionProcess(gr,prediction_intervals)
 
 
 
@@ -1002,17 +1046,9 @@ def AddRecord(rec, gr, ip_range, next_period):
     return gr
 
 
-## Function for parsing input script parameters
 
-def ParseParams():
-    options, args = parser.parse_args()
-    ip_range = options.ip_range
-    plot_interval_periods = options.plot_interval
-    severity = options.logger_severity.upper()
-    if severity != "INFO" and severity != "ANOMALY" and severity != None:
-        print "Wrong logger severity inserted, please insert info or anomaly."
-        quit()
 
+def IPtoIPRange(ip_range):
     if ip_range is not None:
         ip_range = ip_range.split('-')
         try:
@@ -1021,19 +1057,34 @@ def ParseParams():
         except:
             print "Please insert IP range in IP1-IP2 format."
             exit()
+    return ip_range
+
+## Function for parsing input script parameters
+
+def ParseParams():
+    options, args = parser.parse_args()
+    ip_range = options.ip_range
+    ip_range_list = options.ip_range
+    plot_interval_periods = options.plot_interval
+    severity = options.logger_severity.upper()
+    if severity != "INFO" and severity != "ANOMALY" and severity != None:
+        print "Wrong logger severity inserted, please insert info or anomaly."
+        quit()
+
+    ip_range = IPtoIPRange(ip_range)
     if plot_interval_periods is not None:
         plot_interval_periods = DAY_PERIODS_COUNT * int(plot_interval_periods)
         if plot_interval_periods < HOUR_PERIODS_COUNT:
             plot_interval_periods = HOUR_PERIODS_COUNT
 
 
-    return options.logger_severity.upper(), ip_range, options.file_path, options.learning, plot_interval_periods, options.whitelist_file_path, options.structure_detect,options.scaling_factor,options.num_periods_report,options.threshold,options.output_path,options.verbose
+    return options.logger_severity.upper(), ip_range, ip_range_list, options.file_path, options.learning, plot_interval_periods, options.whitelist_file_path, options.structure_detect,options.scaling_factor,options.num_periods_report,options.threshold,options.output_path,options.verbose
 
 
 ## Function for exporting data to file on finishing of learning stage
 
 def ExportData(file_path="data"):
-    print "Exporting data"
+    print "Exporting learned data"
     gr_to_save = nx.DiGraph(gr)
     gr_to_save.graph['flow_count'] = list(gr_to_save.graph['flow_count'])
     gr_to_save.graph['hwt_flow'] = list()
@@ -1050,6 +1101,7 @@ def ExportData(file_path="data"):
     gr_to_save.graph['measured_data_list_total'] = []
     gr_to_save.graph['deviation_list'] = []
     gr_to_save.graph['deviation_list_total'] = []
+    gr_to_save.graph['ip_range'] = str(gr_to_save.graph['ip_range'])
 
     for node_id, node_attrs in gr_to_save.nodes(data=True):
         gr_to_save.node[node_id]['permanent_addr'] = True
@@ -1141,7 +1193,7 @@ def ImportData(rec, file_path="data/learned.json"):
     graph = json_graph.node_link_graph(data, directed=True, multigraph=False,
                                        attrs={'id': 'id', 'source': 'source', 'target': 'target',
                                               'last_seen': 'last_seen', 'time': 'time', 'hwt_a':'hwt_a', 'hwt_b':'hwt_b',
-                                              'hwt_s':'hwt_s','hwt_s2':'hwt_s2','hwt_Y':'hwt_Y','hwt_params':'hwt_params'})
+                                              'hwt_s':'hwt_s','hwt_s2':'hwt_s2','hwt_Y':'hwt_Y','hwt_params':'hwt_params','ip_range':'ip_range'})
     for src, dst, edge_attrs in graph.edges(data=True):
         graph[src][dst]['permanent_edge'] = True
         graph[src][dst]['time'] = deque(edge_attrs['time'])
@@ -1187,7 +1239,6 @@ def ImportData(rec, file_path="data/learned.json"):
             if tm == 0:
                 graph.node[node_id]['permanent_addr'] = False
                 break
-
     graph.graph['flow_count'] = deque(graph.graph['flow_count'])
     graph.graph['hwt_a'] = deque(graph.graph['hwt_a'])
     graph.graph['hwt_b'] = deque(graph.graph['hwt_b'])
