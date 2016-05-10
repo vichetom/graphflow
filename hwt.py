@@ -1,11 +1,13 @@
 from scipy.optimize import fmin_l_bfgs_b
 from collections import deque
 
-def HWT(x, m, m2, forecast, alpha=None, beta = None, gamma=None, delta=None, initial_values_optimization=[0.5, 0.5, 0.5, 0.5]):
+
+def HWT(x, m, m2, forecast, alpha=None, beta=None, gamma=None, delta=None,
+        initial_values_optimization=[0.5, 0.5, 0.5, 0.5]):
     Y = x[:]
     test_series = []
     if (alpha == None or beta == None or gamma == None or delta == None):
-        boundaries = [(0, 1), (0, 1),(0, 1), (0, 1)]
+        boundaries = [(0, 1), (0, 1), (0, 1), (0, 1)]
         train_series = Y[:-m2 * 1]
         test_series = Y[-m2 * 1:]
         Y = train_series
@@ -28,15 +30,17 @@ def HWT(x, m, m2, forecast, alpha=None, beta = None, gamma=None, delta=None, ini
         s2.append(delta * (Y[i] - a[i] - s[i]) + (1 - delta) * s2[i])
         y.append(a[i + 1] + b[i + 1] + s[i + 1] + s2[i + 1])
 
-    return Y[-forecast:], (alpha, beta, gamma, delta), y[:-forecast],deque(a), deque(b), deque(s),deque(s2),deque(Y)
+    return Y[-forecast:], (alpha, beta, gamma, delta), y[:-forecast], deque(a), deque(b), deque(s), deque(s2), deque(Y)
 
-def HWTStep(Y, a,b,s,s2,alpha, beta, gamma, delta,m,m2):
+
+def HWTStep(Y, a, b, s, s2, alpha, beta, gamma, delta, m, m2):
     a.append(alpha * (Y - s2[-1] - s[-1]) + (1 - alpha) * (a[-1]))
     b.append(beta * (a[-1] - a[-2]) + (1 - beta) * b[-1])
     s.append(gamma * (Y - a[-1] - s2[-1]) + (1 - gamma) * s[-1])
     s2.append(delta * (Y - a[-1] - s[-1]) + (1 - delta) * s2[-1])
     hwt_result = a[-1] + b[-1] + s[-m] + s2[-m2]
-    return hwt_result, deque(a),deque(b),deque(s),deque(s2)
+    return hwt_result, deque(a), deque(b), deque(s), deque(s2)
+
 
 def RMSE(params, *args):
     forecast, next_prediction = ParamsEstimation(params, *args)
@@ -52,7 +56,8 @@ def ParamsEstimation(params, *args):
     m = args[1]
     test_data = args[2]
     alpha, beta, gamma, delta = params
-    forecast, params, next_prediction, _, _, _, _, _ = HWT(train, m[0], m[1], len(test_data), alpha=alpha, beta=beta, gamma=gamma, delta=delta)
+    forecast, params, next_prediction, _, _, _, _, _ = HWT(train, m[0], m[1], len(test_data), alpha=alpha, beta=beta,
+                                                           gamma=gamma, delta=delta)
 
     return forecast, next_prediction
 
@@ -60,6 +65,7 @@ def ParamsEstimation(params, *args):
 if __name__ == "__main__":
     values = list(xrange(30))
     # print values
-    res = HWT(values, 2, 2 * 5, 5, alpha=None, beta=None, gamma=None, delta=None, initial_values_optimization=[0.1, 0.5, 0.2, 0.2])
+    res = HWT(values, 2, 2 * 5, 5, alpha=None, beta=None, gamma=None, delta=None,
+              initial_values_optimization=[0.1, 0.5, 0.2, 0.2])
 
     print res
