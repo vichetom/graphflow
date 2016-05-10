@@ -460,7 +460,6 @@ def DataLoader(UR_Flow):
         print("Error: output and input interfaces data format or data specifier mismatch")
         return -1, -1
     except trap.EFMTChanged as e:
-        # Get data format from negotiation
         (fmttype, fmtspec) = trap.get_data_fmt(trap.IFC_INPUT, 0)
         UR_Flow = unirec.CreateTemplate("UR_Flow", fmtspec)
         data = e.data
@@ -622,9 +621,6 @@ def EdgeAnalysis(gr, num_blocks_report, known_edges_set, structure_detect, hwt_s
                         gr[src][dst]['detection_seq'] = 0
                         gr[src][dst]['prediction_sum'] = 0
                         gr[src][dst]['values_last_sum'] = 0
-
-                    # gr[src][dst]['time'][-1] = gr[src][dst]['hwt_edge'][current_prediction_count]
-
                     gr[src][dst]['hwt_a'].pop()
                     gr[src][dst]['hwt_b'].pop()
                     gr[src][dst]['hwt_s'].pop()
@@ -781,7 +777,6 @@ def NodeAnalysis(gr, num_blocks_report, known_nodes_set, structure_detect, hwt_s
                         gr.node[node_id]['detection_seq'] = 0
                         gr.node[node_id]['prediction_sum'] = 0
                         gr.node[node_id]['values_last_sum'] = 0
-                    # gr.node[node_id]['time'][-1] = gr.node[node_id]['hwt_addr'][current_prediction_count]
                     gr.node[node_id]['hwt_a'].pop()
                     gr.node[node_id]['hwt_b'].pop()
                     gr.node[node_id]['hwt_s'].pop()
@@ -1308,24 +1303,22 @@ def ImportData(rec, file_path="data/learned.json"):
 
 
 module_info = trap.CreateModuleInfo(
-    "GraphFlow",  # Module name
+    "Graphflow",
     "Module for network flow traffic analysis. Module detects anomaly in flow amount, detects connecting and disconnecting known and unknown IP addresses and connections between addresses, detects low/high flow traffic.",
-    # Description
-    1,  # Number of input interfaces
-    0,  # Number of output interfaces
-    parser  # use previously defined OptionParser
+
+    1,
+    0,
+    parser
 )
 
 
 ## Function for initialization data structures from Nemea
 
 def ModuleInitialization():
-    # Initialize module
     try:
         ifc_spec = trap.parseParams(sys.argv, module_info)
         trap.init(module_info, ifc_spec)
-        trap.registerDefaultSignalHandler()  # This is needed to allow module termination using s SIGINT or SIGTERM signal
-        # this module accepts all UniRec fieds -> set required format:
+        trap.registerDefaultSignalHandler()
         trap.set_required_fmt(0, trap.TRAP_FMT_UNIREC, "")
     except trap.EBadParams as e:
         print e
