@@ -1,21 +1,18 @@
 from scipy.optimize import fmin_l_bfgs_b
 from collections import deque
 
-def HWT(x, m, m2, forecast, alpha=None, beta = None, gamma=None, delta=None, initial_values_optimization=[0.1, 0.5, 0.2, 0.2]):
+def HWT(x, m, m2, forecast, alpha=None, beta = None, gamma=None, delta=None, initial_values_optimization=[0.5, 0.5, 0.5, 0.5]):
     Y = x[:]
     test_series = []
     if (alpha == None or beta == None or gamma == None or delta == None):
         boundaries = [(0, 1), (0, 1),(0, 1), (0, 1)]
         train_series = Y[:-m2 * 1]
         test_series = Y[-m2 * 1:]
-        # print train_series
-        # print test_series
         Y = train_series
         func = RMSE
         parameters = fmin_l_bfgs_b(func, x0=initial_values_optimization, args=(train_series, (m, m2), test_series),
                                    bounds=boundaries, approx_grad=True, factr=10 ** 3)
         alpha, beta, gamma, delta = parameters[0]
-        print parameters[0]
     a = [sum(Y[0:m]) / float(m)]
     b = [(sum(Y[m:2 * m]) - sum(Y[0:m])) / m ** 2]
     s = [Y[i] / a[0] for i in range(m)]
@@ -47,9 +44,6 @@ def RMSE(params, *args):
     train = args[0]
     rmse_outofsample = sum([(m - n) ** 2 for m, n in zip(test_data, forecast)]) / len(test_data)
     rmse_insample = sum([(m - n) ** 2 for m, n in zip(train, next_prediction)]) / len(train)
-
-    # rmse = sqrt(sum([(m - n) ** 2 for m, n in zip(Y, y[:-1])]) / len(Y))
-
     return rmse_insample + rmse_outofsample
 
 
